@@ -11,6 +11,11 @@ public without sharing class LeaveTypePolicyService {
         public Integer carryoverExpireMonth;
         public Integer carryoverExpireDay;
         public Boolean requiresHrApproval;
+        public String approvalMode;
+        public Decimal autoApproveBelowDays;
+        public Decimal escalateAboveDays;
+        public String escalationTarget;
+        public String approvalGroupKey;
         public Decimal policyVersion;
     }
 
@@ -42,7 +47,9 @@ public without sharing class LeaveTypePolicyService {
 
         List<Leave_Type_Definition__c> definitions = [
             SELECT Id, Name, Type_Code__c, Is_Active__c, Allow_Carryover__c, Carryover_Limit__c,
-                   Carryover_Expire_Month__c, Carryover_Expire_Day__c, Requires_HR_Approval__c, Policy_Version__c
+                   Carryover_Expire_Month__c, Carryover_Expire_Day__c, Requires_HR_Approval__c,
+                   Approval_Mode__c, Auto_Approve_Below_Days__c, Escalate_Above_Days__c,
+                   Escalation_Target__c, Approval_Group_Key__c, Policy_Version__c
             FROM Leave_Type_Definition__c
             WHERE Type_Code__c IN :normalizedCodes
         ];
@@ -59,6 +66,13 @@ public without sharing class LeaveTypePolicyService {
             policy.carryoverExpireMonth = toInteger(definition.Carryover_Expire_Month__c);
             policy.carryoverExpireDay = toInteger(definition.Carryover_Expire_Day__c);
             policy.requiresHrApproval = definition.Requires_HR_Approval__c;
+            policy.approvalMode = String.isBlank(definition.Approval_Mode__c)
+                ? resolveDefaultApprovalMode(definition.Requires_HR_Approval__c)
+                : definition.Approval_Mode__c;
+            policy.autoApproveBelowDays = definition.Auto_Approve_Below_Days__c;
+            policy.escalateAboveDays = definition.Escalate_Above_Days__c;
+            policy.escalationTarget = definition.Escalation_Target__c;
+            policy.approvalGroupKey = definition.Approval_Group_Key__c;
             policy.policyVersion = definition.Policy_Version__c;
             policyByTypeCode.put(definition.Type_Code__c, policy);
         }
@@ -96,8 +110,17 @@ public without sharing class LeaveTypePolicyService {
         policy.carryoverExpireMonth = 'ANNUAL' == typeCode ? LeaveAnnualCarryoverService.DEFAULT_EXPIRY_MONTH : null;
         policy.carryoverExpireDay = 'ANNUAL' == typeCode ? LeaveAnnualCarryoverService.DEFAULT_EXPIRY_DAY : null;
         policy.requiresHrApproval = false;
+        policy.approvalMode = resolveDefaultApprovalMode(false);
+        policy.autoApproveBelowDays = null;
+        policy.escalateAboveDays = null;
+        policy.escalationTarget = 'HR';
+        policy.approvalGroupKey = null;
         policy.policyVersion = 1;
         return policy;
+    }
+
+    private static String resolveDefaultApprovalMode(Boolean requiresHrApproval) {
+        return requiresHrApproval ? 'Manager Then HR' : 'Manager Only';
     }
 
     private static Integer toInteger(Decimal value) {

@@ -5,7 +5,8 @@ public without sharing class LeaveService {
     public static void submitLeave(Id leaveRequestId) {
         Leave_Request__c req = [
             SELECT Id, Employee__c, Manager__c, Start_Date__c, End_Date__c,
-                   Days__c, Leave_Type__c, Status__c
+                   Days__c, Leave_Type__c, Status__c, Approval_Mode_Snapshot__c,
+                   Approval_Target_Snapshot__c
             FROM Leave_Request__c
             WHERE Id = :leaveRequestId
         ];
@@ -15,25 +16,49 @@ public without sharing class LeaveService {
         req.Manager__c = emp.ManagerId;
         req.Status__c = 'Pending_Manager_Approval';
         req.Submitted_Time__c = System.now();
-        update req;
+        LeaveApprovalHistoryService.suppressTransitionHistory(true);
+        try {
+            update req;
+        } finally {
+            LeaveApprovalHistoryService.suppressTransitionHistory(false);
+        }
 
-        insert new Leave_Approval_History__c(
-            Leave_Request__c = req.Id,
-            Approver__c = emp.ManagerId,
-            Stage__c = 'Submit',
-            Action__c = 'Submitted',
-            Action_Time__c = System.now()
+        Leave_Request__c submittedRequest = [
+            SELECT Id, Status__c, Manager__c, Approval_Mode_Snapshot__c,
+                   Approval_Target_Snapshot__c, Balance_Deducted__c
+            FROM Leave_Request__c
+            WHERE Id = :req.Id
+        ];
+
+        List<Leave_Approval_History__c> historiesToInsert = new List<Leave_Approval_History__c>();
+        historiesToInsert.add(
+            LeaveApprovalHistoryService.buildHistory(submittedRequest, 'Submit', 'Submitted', null)
         );
+        if (submittedRequest.Status__c == 'Approved' &&
+            submittedRequest.Approval_Mode_Snapshot__c == 'Auto Approve') {
+            historiesToInsert.add(
+                LeaveApprovalHistoryService.buildHistory(
+                    submittedRequest,
+                    'Submit',
+                    'Approved',
+                    'Auto approved by policy.'
+                )
+            );
+        }
+        insert historiesToInsert;
 
-        Approval.ProcessSubmitRequest submitReq = new Approval.ProcessSubmitRequest();
-        submitReq.setObjectId(req.Id);
-        submitReq.setSubmitterId(UserInfo.getUserId());
-        Approval.process(submitReq);
+        if (submittedRequest.Status__c == 'Pending_Manager_Approval') {
+            Approval.ProcessSubmitRequest submitReq = new Approval.ProcessSubmitRequest();
+            submitReq.setObjectId(req.Id);
+            submitReq.setSubmitterId(UserInfo.getUserId());
+            Approval.process(submitReq);
+        }
     }
 
     public static void approveLeave(Id leaveRequestId, Id approverId, String comments) {
         Leave_Request__c req = [
-            SELECT Id, Status__c, Leave_Type__c, Days__c
+            SELECT Id, Status__c, Leave_Type__c, Days__c, Manager__c,
+                   Approval_Mode_Snapshot__c, Approval_Target_Snapshot__c
             FROM Leave_Request__c
             WHERE Id = :leaveRequestId
         ];
@@ -51,36 +76,50 @@ public without sharing class LeaveService {
         }
 
         req.Status__c = nextStatus;
-        update req;
+        LeaveApprovalHistoryService.suppressTransitionHistory(true);
+        try {
+            update req;
+        } finally {
+            LeaveApprovalHistoryService.suppressTransitionHistory(false);
+        }
 
-        insert new Leave_Approval_History__c(
-            Leave_Request__c = req.Id,
-            Approver__c = approverId,
-            Stage__c = stage,
-            Action__c = 'Approved',
-            Comments__c = comments,
-            Action_Time__c = System.now()
-        );
+        Leave_Approval_History__c history = LeaveApprovalHistoryService.buildHistory(req, stage, 'Approved', comments);
+        history.Approver__c = approverId;
+        insert history;
 
-        if (nextStatus == 'Approved') {
+        Leave_Request__c updatedRequest = [
+            SELECT Status__c
+            FROM Leave_Request__c
+            WHERE Id = :req.Id
+        ];
+        if (updatedRequest.Status__c == 'Approved') {
             deductBalance(req.Id);
         }
     }
 
     public static void rejectLeave(Id leaveRequestId, Id approverId, String comments) {
-        Leave_Request__c req = [SELECT Id FROM Leave_Request__c WHERE Id = :leaveRequestId];
+        Leave_Request__c req = [
+            SELECT Id, Status__c, Manager__c, Approval_Mode_Snapshot__c, Approval_Target_Snapshot__c
+            FROM Leave_Request__c
+            WHERE Id = :leaveRequestId
+        ];
 
+        if (req.Status__c != 'Pending_Manager_Approval' && req.Status__c != 'Pending_HR_Approval') {
+            throw new IllegalArgumentException('Leave request is not in a rejectable status');
+        }
+
+        String stage = req.Status__c == 'Pending_HR_Approval' ? 'HR_Approval' : 'Manager_Approval';
         req.Status__c = 'Rejected';
-        update req;
+        LeaveApprovalHistoryService.suppressTransitionHistory(true);
+        try {
+            update req;
+        } finally {
+            LeaveApprovalHistoryService.suppressTransitionHistory(false);
+        }
 
-        insert new Leave_Approval_History__c(
-            Leave_Request__c = req.Id,
-            Approver__c = approverId,
-            Stage__c = 'Manager_Approval',
-            Action__c = 'Rejected',
-            Comments__c = comments,
-            Action_Time__c = System.now()
-        );
+        Leave_Approval_History__c history = LeaveApprovalHistoryService.buildHistory(req, stage, 'Rejected', comments);
+        history.Approver__c = approverId;
+        insert history;
     }
 
     public static void deductBalance(Id leaveRequestId) {
@@ -241,16 +280,8 @@ public without sharing class LeaveService {
         if (isProcessing) return;
         isProcessing = true;
         try {
-            Leave_Request__c req = [SELECT Id, Manager__c FROM Leave_Request__c WHERE Id = :leaveRequestId];
-            insert new Leave_Approval_History__c(
-                Leave_Request__c = req.Id,
-                Approver__c = req.Manager__c,
-                Stage__c = 'Manager_Approval',
-                Action__c = isApproved ? 'Approved' : 'Rejected',
-                Action_Time__c = System.now()
-            );
             if (isApproved) {
-                deductBalance(req.Id);
+                deductBalance(leaveRequestId);
             }
         } finally {
             isProcessing = false;

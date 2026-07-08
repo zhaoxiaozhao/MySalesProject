@@ -23,15 +23,16 @@ private class LeaveRequestSegmentServiceTest {
 
     @IsTest
     static void testCrossYearValidationAndSegmentCreation() {
+        User employee = createEmployeeUser('segmentsubmit');
         insert new Leave_Balance__c(
-            User__c = UserInfo.getUserId(),
+            User__c = employee.Id,
             Year__c = 2026,
             Annual_Leave__c = 2,
             Sick_Leave__c = 0,
             Personal_Leave__c = 0
         );
         insert new Leave_Balance__c(
-            User__c = UserInfo.getUserId(),
+            User__c = employee.Id,
             Year__c = 2027,
             Annual_Leave__c = 3,
             Sick_Leave__c = 0,
@@ -39,7 +40,7 @@ private class LeaveRequestSegmentServiceTest {
         );
 
         Leave_Request__c requestRecord = new Leave_Request__c(
-            Employee__c = UserInfo.getUserId(),
+            Employee__c = employee.Id,
             Leave_Type__c = 'Annual',
             Start_Date__c = Date.newInstance(2026, 12, 30),
             End_Date__c = Date.newInstance(2027, 1, 3),
@@ -72,15 +73,16 @@ private class LeaveRequestSegmentServiceTest {
 
     @IsTest
     static void testCrossYearDeductionConsumesBothYears() {
+        User employee = createEmployeeUser('segmentdeduct');
         insert new Leave_Balance__c(
-            User__c = UserInfo.getUserId(),
+            User__c = employee.Id,
             Year__c = 2026,
             Annual_Leave__c = 2,
             Sick_Leave__c = 0,
             Personal_Leave__c = 0
         );
         insert new Leave_Balance__c(
-            User__c = UserInfo.getUserId(),
+            User__c = employee.Id,
             Year__c = 2027,
             Annual_Leave__c = 3,
             Sick_Leave__c = 0,
@@ -88,7 +90,7 @@ private class LeaveRequestSegmentServiceTest {
         );
 
         Leave_Request__c requestRecord = new Leave_Request__c(
-            Employee__c = UserInfo.getUserId(),
+            Employee__c = employee.Id,
             Leave_Type__c = 'Annual',
             Start_Date__c = Date.newInstance(2026, 12, 30),
             End_Date__c = Date.newInstance(2027, 1, 3),
@@ -105,7 +107,7 @@ private class LeaveRequestSegmentServiceTest {
         for (Leave_Balance__c balance : [
             SELECT Year__c, Annual_Leave__c
             FROM Leave_Balance__c
-            WHERE User__c = :UserInfo.getUserId()
+            WHERE User__c = :employee.Id
             AND Year__c IN (2026, 2027)
         ]) {
             balancesByYear.put(Integer.valueOf(String.valueOf(balance.Year__c)), balance);
@@ -113,5 +115,28 @@ private class LeaveRequestSegmentServiceTest {
 
         Assert.areEqual(0, balancesByYear.get(2026).Annual_Leave__c, '2026 balance should be fully consumed.');
         Assert.areEqual(0, balancesByYear.get(2027).Annual_Leave__c, '2027 balance should be fully consumed.');
+    }
+
+    private static User createEmployeeUser(String key) {
+        User currentUser = [
+            SELECT ProfileId
+            FROM User
+            WHERE Id = :UserInfo.getUserId()
+        ];
+        String uniqueToken = key + String.valueOf(DateTime.now().getTime());
+        User employee = new User(
+            Alias = uniqueToken.substring(0, Math.min(8, uniqueToken.length())),
+            Email = uniqueToken + '@example.com',
+            EmailEncodingKey = 'UTF-8',
+            LastName = 'Employee',
+            LanguageLocaleKey = 'en_US',
+            LocaleSidKey = 'en_US',
+            ProfileId = currentUser.ProfileId,
+            TimeZoneSidKey = 'America/Los_Angeles',
+            Username = uniqueToken + '@example.com',
+            ManagerId = UserInfo.getUserId()
+        );
+        insert employee;
+        return employee;
     }
 }

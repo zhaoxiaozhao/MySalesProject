@@ -2,7 +2,8 @@ global class LeaveExpiryBatch implements Database.Batchable<SObject> {
 
     global Database.QueryLocator start(Database.BatchableContext bc) {
         return Database.getQueryLocator([
-            SELECT Id, Status__c, Reason__c, End_Date__c
+            SELECT Id, Status__c, Reason__c, End_Date__c,
+                   Approval_Mode_Snapshot__c, Approval_Target_Snapshot__c
             FROM Leave_Request__c
             WHERE Status__c IN ('Submitted', 'Pending_Manager_Approval', 'Pending_HR_Approval')
             AND End_Date__c < TODAY
@@ -20,13 +21,14 @@ global class LeaveExpiryBatch implements Database.Batchable<SObject> {
                 + ' without approval.';
             toUpdate.add(req);
 
-            histories.add(new Leave_Approval_History__c(
-                Leave_Request__c = req.Id,
-                Stage__c = 'Cancellation',
-                Action__c = 'Cancelled',
-                Comments__c = 'Auto-cancelled by system: leave period expired without approval',
-                Action_Time__c = System.now()
-            ));
+            histories.add(
+                LeaveApprovalHistoryService.buildHistory(
+                    req,
+                    'Cancellation',
+                    'Cancelled',
+                    'Auto-cancelled by system: leave period expired without approval'
+                )
+            );
         }
 
         if (!toUpdate.isEmpty()) {

@@ -34,6 +34,16 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Leave_Request__c.Approval_Mode_Snapshot__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Leave_Request__c.Approval_Target_Snapshot__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Leave_Request__c.Leave_Type_Definition__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -154,7 +164,32 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Leave_Type_Definition__c.Approval_Group_Key__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Leave_Type_Definition__c.Approval_Mode__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Leave_Type_Definition__c.Auto_Approve_Below_Days__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Leave_Type_Definition__c.Carryover_Limit__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Leave_Type_Definition__c.Escalate_Above_Days__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Leave_Type_Definition__c.Escalation_Target__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -185,6 +220,16 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Leave_Approval_History__c.Approver__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Leave_Approval_History__c.Approver_Target__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Leave_Approval_History__c.Approval_Mode_Snapshot__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

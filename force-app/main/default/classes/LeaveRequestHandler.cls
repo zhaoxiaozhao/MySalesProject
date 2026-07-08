@@ -37,33 +37,8 @@ public without sharing class LeaveRequestHandler {
                 req.Balance_Year__c = req.Start_Date__c.year();
             }
 
-            Boolean fromDraft = old.Status__c == 'Draft'
-                && (req.Status__c == 'Submitted' || req.Status__c == 'Pending_Manager_Approval'
-                    || req.Status__c == 'Pending_HR_Approval');
-
-            if (fromDraft) {
-                if (req.Employee__c != null) {
-                    employeeIds.add(req.Employee__c);
-                }
-                req.Submitted_Time__c = System.now();
-
-                if (LeaveService.hasOverlappingDates(req.Employee__c, req.Start_Date__c, req.End_Date__c, req.Id)) {
-                    req.addError('You already have an active leave request in this date range.');
-                } else {
-                    try {
-                        validateLeaveTypePolicy(req, policyByTypeCode);
-                        LeaveService.validateBalance(
-                            req.Employee__c,
-                            req.Leave_Type__c,
-                            req.Days__c,
-                            req.Start_Date__c,
-                            req.End_Date__c,
-                            req.Id
-                        );
-                    } catch (IllegalArgumentException e) {
-                        req.addError(e.getMessage());
-                    }
-                }
+            if (req.Employee__c != null && shouldResolveManager(req, old)) {
+                employeeIds.add(req.Employee__c);
             }
         }
 
@@ -76,6 +51,44 @@ public without sharing class LeaveRequestHandler {
                         && req.Employee__c != null && userMap.containsKey(req.Employee__c)) {
                     req.Manager__c = userMap.get(req.Employee__c).ManagerId;
                 }
+            }
+        }
+
+        for (Leave_Request__c req : records) {
+            Leave_Request__c old = oldMap.get(req.Id);
+            if (req.Employee__c != null && userMap.containsKey(req.Employee__c) && shouldResolveManager(req, old)) {
+                req.Manager__c = userMap.get(req.Employee__c).ManagerId;
+            }
+
+            if (old.Status__c == 'Pending_Manager_Approval' && req.Status__c == 'Approved') {
+                req.Status__c = LeaveApprovalRoutingService.resolveManagerApprovalStatus(req);
+            }
+
+            Boolean fromDraft = isDraftSubmission(old, req);
+            if (!fromDraft) {
+                continue;
+            }
+
+            req.Submitted_Time__c = System.now();
+
+            if (LeaveService.hasOverlappingDates(req.Employee__c, req.Start_Date__c, req.End_Date__c, req.Id)) {
+                req.addError('You already have an active leave request in this date range.');
+                continue;
+            }
+
+            try {
+                validateLeaveTypePolicy(req, policyByTypeCode);
+                LeaveService.validateBalance(
+                    req.Employee__c,
+                    req.Leave_Type__c,
+                    req.Days__c,
+                    req.Start_Date__c,
+                    req.End_Date__c,
+                    req.Id
+                );
+                applyApprovalRouting(req, policyByTypeCode);
+            } catch (IllegalArgumentException e) {
+                req.addError(e.getMessage());
             }
         }
     }
@@ -100,6 +113,10 @@ public without sharing class LeaveRequestHandler {
             } else if (req.Status__c == 'Rejected' && old.Status__c != 'Rejected') {
                 LeaveService.handleApprovalResult(req.Id, false);
             }
+        }
+
+        if (!LeaveApprovalHistoryService.isTransitionHistorySuppressed()) {
+            LeaveApprovalHistoryService.createTransitionHistories(records, oldMap);
         }
 
         if (!requestsToSyncSegments.isEmpty()) {
@@ -136,6 +153,33 @@ public without sharing class LeaveRequestHandler {
         if (policy.isDefined && !policy.isActive) {
             req.addError('Selected leave type is inactive. Please choose another leave type.');
         }
+    }
+
+    private static void applyApprovalRouting(
+        Leave_Request__c req,
+        Map<String, LeaveTypePolicyService.LeaveTypePolicy> policyByTypeCode
+    ) {
+        String typeCode = LeaveTypePolicyService.normalizeLeaveTypeValue(req.Leave_Type__c);
+        LeaveTypePolicyService.LeaveTypePolicy policy = policyByTypeCode.get(typeCode);
+        if (policy == null) {
+            policy = LeaveTypePolicyService.getPolicyByTypeCode(typeCode);
+        }
+
+        LeaveApprovalRoutingService.RoutingDecision decision =
+            LeaveApprovalRoutingService.resolveSubmissionDecision(req, policy, req.Manager__c);
+        req.Status__c = decision.nextStatus;
+        req.Approval_Mode_Snapshot__c = decision.approvalModeSnapshot;
+        req.Approval_Target_Snapshot__c = decision.approvalTargetSnapshot;
+    }
+
+    private static Boolean shouldResolveManager(Leave_Request__c req, Leave_Request__c old) {
+        return req.Status__c != 'Draft' || old.Status__c != 'Draft' || req.Employee__c != old.Employee__c;
+    }
+
+    private static Boolean isDraftSubmission(Leave_Request__c old, Leave_Request__c req) {
+        return old.Status__c == 'Draft'
+            && (req.Status__c == 'Submitted' || req.Status__c == 'Pending_Manager_Approval'
+                || req.Status__c == 'Pending_HR_Approval' || req.Status__c == 'Approved');
     }
 
     private static Map<String, LeaveTypePolicyService.LeaveTypePolicy> getPolicyByTypeCode(
