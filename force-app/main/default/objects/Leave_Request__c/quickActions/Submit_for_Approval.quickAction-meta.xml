@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Submit for Approval</label>
+    <type>Update</type>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+    <fieldOverrides>
+        <field>Status__c</field>
+        <literalValue>Pending_Manager_Approval</literalValue>
+    </fieldOverrides>
+</QuickAction>

@@ -1,0 +1,81 @@
+<template>
+    <div class="slds-box slds-theme_default">
+        <lightning-card title="Book Manager" icon-name="standard:book">
+            <div class="slds-m-around_medium">
+
+                <div class="slds-grid slds-gutters slds-m-bottom_small">
+                    <div class="slds-col slds-size_1-of-1">
+                        <lightning-button-group>
+                            <lightning-button label="Refresh" onclick={loadBooks}></lightning-button>
+                            <lightning-button label="Published Only" onclick={loadPublished}></lightning-button>
+                        </lightning-button-group>
+                    </div>
+                </div>
+
+                <div class="slds-grid slds-gutters slds-m-bottom_small">
+                    <div class="slds-col slds-size_1-of-2">
+                        <lightning-input label="Search by Author Email" type="email" value={searchEmail}
+                            onchange={handleEmailChange}></lightning-input>
+                    </div>
+                    <div class="slds-col slds-size_1-of-2 slds-align_absolute-center">
+                        <lightning-button label="Search" variant="brand" onclick={searchByEmail}
+                            disabled={isSearchDisabled}></lightning-button>
+                    </div>
+                </div>
+
+                <template if:true={stats}>
+                    <div class="slds-grid slds-gutters slds-m-bottom_small">
+                        <template for:each={statItems} for:item="s">
+                            <div key={s.key} class="slds-col slds-size_1-of-3">
+                                <lightning-card>
+                                    <div class="slds-text-align_center slds-p-vertical_small">
+                                        <p class="slds-text-heading_large">{s.count}</p>
+                                        <p class="slds-text-body_small">{s.key}</p>
+                                    </div>
+                                </lightning-card>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+
+                <div class="slds-grid slds-gutters slds-m-bottom_small">
+                    <div class="slds-col slds-size_1-of-3">
+                        <lightning-input label="Discount (%)" type="number" value={discountPercent}
+                            onchange={handleDiscountChange}></lightning-input>
+                    </div>
+                    <div class="slds-col slds-size_1-of-3 slds-align_absolute-center">
+                        <lightning-button label="Apply to Selected" variant="brand" onclick={applyDiscount}
+                            disabled={isActionDisabled}></lightning-button>
+                    </div>
+                    <div class="slds-col slds-size_1-of-3 slds-align_absolute-center">
+                        <lightning-button label={deleteButtonLabel} variant="destructive" onclick={deleteByStatus}>
+                        </lightning-button>
+                    </div>
+                </div>
+
+                <template if:true={error}>
+                    <div class="slds-notify slds-notify_alert slds-theme_error slds-m-bottom_small" role="alert">
+                        <span class="slds-assistive-text">Error</span>
+                        <span class="slds-notify__content">{error}</span>
+                    </div>
+                </template>
+
+                <template if:true={success}>
+                    <div class="slds-notify slds-notify_alert slds-theme_success slds-m-bottom_small" role="status">
+                        <span class="slds-assistive-text">Success</span>
+                        <span class="slds-notify__content">{success}</span>
+                    </div>
+                </template>
+
+                <lightning-datatable key-field="Id" data={books} columns={columns} onrowselection={handleSelection}>
+                </lightning-datatable>
+
+                <div class="slds-align_absolute-center slds-m-top_small">
+                    <template if:true={isLoading}>
+                        <lightning-spinner alternative-text="Loading..."></lightning-spinner>
+                    </template>
+                </div>
+            </div>
+        </lightning-card>
+    </div>
+</template>

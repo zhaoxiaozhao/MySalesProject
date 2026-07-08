@@ -1,0 +1,63 @@
+<template>
+    <lightning-card title="My Leave Balance" icon-name="standard:case_wrap_up">
+        <div class="slds-m-around_medium">
+
+            <!-- Balance Cards -->
+            <template if:true={balance}>
+                <div class="slds-grid slds-gutters slds-m-bottom_medium">
+                    <div class="slds-col slds-size_1-of-3">
+                        <div class="slds-box slds-text-align_center slds-theme_info">
+                            <p class="slds-text-heading_small">Annual Leave</p>
+                            <p class="slds-text-heading_x-large">{balance.Annual_Total_Available__c}</p>
+                            <template if:true={balance.Carryover_Annual_Leave__c}>
+                                <p class="slds-text-body_small">
+                                    Carryover: {balance.Carryover_Annual_Leave__c}
+                                </p>
+                                <p class="slds-text-body_small">
+                                    Expires: {balance.Carryover_Expiry_Date__c}
+                                </p>
+                            </template>
+                        </div>
+                    </div>
+                    <div class="slds-col slds-size_1-of-3">
+                        <div class="slds-box slds-text-align_center slds-theme_success">
+                            <p class="slds-text-heading_small">Sick Leave</p>
+                            <p class="slds-text-heading_x-large">{balance.Sick_Leave__c}</p>
+                        </div>
+                    </div>
+                    <div class="slds-col slds-size_1-of-3">
+                        <div class="slds-box slds-text-align_center slds-theme_warning">
+                            <p class="slds-text-heading_small">Personal Leave</p>
+                            <p class="slds-text-heading_x-large">{balance.Personal_Leave__c}</p>
+                        </div>
+                    </div>
+                </div>
+            </template>
+            <template if:false={balance}>
+                <p class="slds-text-color_weak slds-m-bottom_medium">No leave balance set up for this year.</p>
+            </template>
+
+            <!-- New Request Button -->
+            <lightning-button label="New Leave Request" variant="brand" icon-name="utility:add"
+                onclick={newRequest}>
+            </lightning-button>
+
+            <!-- My Requests Table -->
+            <div class="slds-m-top_medium">
+                <template if:true={requests}>
+                    <lightning-datatable key-field="Id" data={requests} columns={columns}>
+                    </lightning-datatable>
+                </template>
+                <template if:false={requests}>
+                    <p class="slds-text-color_weak">Loading...</p>
+                </template>
+            </div>
+
+            <template if:true={error}>
+                <div class="slds-notify slds-notify_alert slds-theme_error slds-m-top_small" role="alert">
+                    <span class="slds-notify__content">{error}</span>
+                </div>
+            </template>
+        </div>
+    </lightning-card>
+</template>

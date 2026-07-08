@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Published_Book_Validation</fullName>
+    <active>true</active>
+    <errorConditionFormula><![CDATA[AND(
+        ISPICKVAL(Status__c, 'Published'),
+        OR(
+            ISBLANK(PublishedDate__c),
+            Price__c <= 0,
+            Price__c = NULL
+        )
+    )]]></errorConditionFormula>
+    <errorDisplayField>Status__c</errorDisplayField>
+    <errorMessage>A Published book must have a Published Date and a Price greater than 0.</errorMessage>
+</ValidationRule>

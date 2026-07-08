@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Leave Balance</label>
+    <pluralLabel>Leave Balances</pluralLabel>
+    <nameField>
+        <label>Balance Number</label>
+        <type>AutoNumber</type>
+        <displayFormat>BAL-{0000}</displayFormat>
+    </nameField>
+    <deploymentStatus>Deployed</deploymentStatus>
+    <sharingModel>Private</sharingModel>
+    <enableReports>true</enableReports>
+    <enableActivities>true</enableActivities>
+    <enableFeeds>false</enableFeeds>
+    <enableHistory>false</enableHistory>
+</CustomObject>

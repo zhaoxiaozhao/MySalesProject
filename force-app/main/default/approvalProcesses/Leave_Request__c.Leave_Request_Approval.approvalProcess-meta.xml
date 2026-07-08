@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ApprovalProcess xmlns="http://soap.sforce.com/2006/04/metadata">
+    <active>true</active>
+    <allowRecall>true</allowRecall>
+    <description>Standard leave request approval process with manager approval</description>
+    <label>Leave Request Approval</label>
+    <recordEditability>AdminOnly</recordEditability>
+    <showApprovalHistory>true</showApprovalHistory>
+    <entryCriteria>
+        <booleanFilter>1</booleanFilter>
+        <criteriaItems>
+            <field>Leave_Request__c.Status__c</field>
+            <operation>equals</operation>
+            <value>Pending_Manager_Approval</value>
+        </criteriaItems>
+    </entryCriteria>
+    <approvalStep>
+        <allowDelegate>true</allowDelegate>
+        <name>Manager_Approval</name>
+        <userField>Manager__c</userField>
+        <rejectBehavior>
+            <type>RejectRequest</type>
+        </rejectBehavior>
+        <rejectedActions>
+            <actionReference>
+                <name>Set_Status_Rejected</name>
+                <type>FieldUpdate</type>
+            </actionReference>
+        </rejectedActions>
+        <approvedActions>
+            <actionReference>
+                <name>Set_Status_Approved</name>
+                <type>FieldUpdate</type>
+            </actionReference>
+        </approvedActions>
+    </approvalStep>
+    <fieldUpdates>
+        <fullName>Set_Status_Approved</fullName>
+        <field>Status__c</field>
+        <operation>Literal</operation>
+        <value>Approved</value>
+    </fieldUpdates>
+    <fieldUpdates>
+        <fullName>Set_Status_Rejected</fullName>
+        <field>Status__c</field>
+        <operation>Literal</operation>
+        <value>Rejected</value>
+    </fieldUpdates>
+</ApprovalProcess>

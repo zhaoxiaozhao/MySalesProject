@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Escalation_Target__c</fullName>
+    <externalId>false</externalId>
+    <label>Escalation Target</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>HR</fullName>
+                <default>true</default>
+                <label>HR</label>
+            </value>
+            <value>
+                <fullName>Manager Manager</fullName>
+                <default>false</default>
+                <label>Manager Manager</label>
+            </value>
+            <value>
+                <fullName>Custom Queue</fullName>
+                <default>false</default>
+                <label>Custom Queue</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

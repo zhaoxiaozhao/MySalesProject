@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Leave_Type_Definition__c</fullName>
+    <externalId>false</externalId>
+    <label>Leave Type Definition</label>
+    <referenceTo>Leave_Type_Definition__c</referenceTo>
+    <relationshipLabel>Leave Request Segments</relationshipLabel>
+    <relationshipName>Leave_Request_Segments</relationshipName>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

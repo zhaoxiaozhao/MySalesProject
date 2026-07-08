@@ -1,0 +1,86 @@
+<template>
+    <lightning-card title="Leave Management" icon-name="standard:case_wrap_up">
+        <div class="slds-m-around_medium">
+
+            <!-- Employee: Balance -->
+            <template if:true={balance}>
+                <div class="slds-grid slds-gutters slds-m-bottom_medium">
+                    <div class="slds-col slds-size_1-of-3">
+                        <div class="slds-box slds-text-align_center slds-theme_info">
+                            <p class="slds-text-heading_small">Annual</p>
+                            <p class="slds-text-heading_x-large">{balance.Annual_Total_Available__c}</p>
+                            <template if:true={balance.Carryover_Annual_Leave__c}>
+                                <p class="slds-text-body_small">
+                                    Carryover: {balance.Carryover_Annual_Leave__c}
+                                </p>
+                                <p class="slds-text-body_small">
+                                    Expires: {balance.Carryover_Expiry_Date__c}
+                                </p>
+                            </template>
+                        </div>
+                    </div>
+                    <div class="slds-col slds-size_1-of-3">
+                        <div class="slds-box slds-text-align_center slds-theme_success">
+                            <p class="slds-text-heading_small">Sick</p>
+                            <p class="slds-text-heading_x-large">{balance.Sick_Leave__c}</p>
+                        </div>
+                    </div>
+                    <div class="slds-col slds-size_1-of-3">
+                        <div class="slds-box slds-text-align_center slds-theme_warning">
+                            <p class="slds-text-heading_small">Personal</p>
+                            <p class="slds-text-heading_x-large">{balance.Personal_Leave__c}</p>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Employee: My Requests -->
+            <h3 class="slds-section__title">My Leave Requests</h3>
+            <lightning-button label="New Request" variant="brand" icon-name="utility:add"
+                onclick={newRequest} class="slds-m-bottom_small">
+            </lightning-button>
+            <template if:true={myRequests}>
+                <lightning-datatable key-field="Id" data={myRequests} columns={employeeColumns}>
+                </lightning-datatable>
+            </template>
+
+            <!-- Manager: Pending Approvals -->
+            <template if:true={roles.isManager}>
+                <div class="slds-m-top_large">
+                    <h3 class="slds-section__title">Pending Approvals</h3>
+                    <template if:true={pendingApprovals}>
+                        <lightning-datatable key-field="Id" data={pendingApprovals} columns={managerColumns}>
+                        </lightning-datatable>
+                    </template>
+                    <template if:false={pendingApprovals}>
+                        <p class="slds-text-color_weak">No pending approvals.</p>
+                    </template>
+                </div>
+            </template>
+
+            <!-- HR: All Records -->
+            <template if:true={roles.isHR}>
+                <div class="slds-m-top_large">
+                    <h3 class="slds-section__title">All Leave Balances</h3>
+                    <template if:true={allBalances}>
+                        <lightning-datatable key-field="Id" data={allBalances} columns={balanceColumns}>
+                        </lightning-datatable>
+                    </template>
+                </div>
+                <div class="slds-m-top_large">
+                    <h3 class="slds-section__title">All Leave Requests</h3>
+                    <template if:true={allRequests}>
+                        <lightning-datatable key-field="Id" data={allRequests} columns={hrColumns}>
+                        </lightning-datatable>
+                    </template>
+                </div>
+            </template>
+
+            <template if:true={error}>
+                <div class="slds-notify slds-notify_alert slds-theme_error slds-m-top_small" role="alert">
+                    <span class="slds-notify__content">{error}</span>
+                </div>
+            </template>
+        </div>
+    </lightning-card>
+</template>

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Approval_Mode__c</fullName>
+    <externalId>false</externalId>
+    <label>Approval Mode</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Manager Only</fullName>
+                <default>true</default>
+                <label>Manager Only</label>
+            </value>
+            <value>
+                <fullName>Manager Then HR</fullName>
+                <default>false</default>
+                <label>Manager Then HR</label>
+            </value>
+            <value>
+                <fullName>HR Only</fullName>
+                <default>false</default>
+                <label>HR Only</label>
+            </value>
+            <value>
+                <fullName>Configurable</fullName>
+                <default>false</default>
+                <label>Configurable</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>
