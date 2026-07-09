@@ -6,6 +6,12 @@ private class LeaveApprovalHistoryServiceTest {
         User employee = createEmployeeUser('autohistory');
         Integer yearValue = Date.today().year();
 
+        Leave_Type_Definition__c sickDefinition = createLeaveTypeDefinition(
+            'SICK',
+            'Sick Leave Policy',
+            'Configurable'
+        );
+
         insert new Leave_Balance__c(
             User__c = employee.Id,
             Year__c = yearValue,
@@ -16,7 +22,7 @@ private class LeaveApprovalHistoryServiceTest {
 
         Leave_Request__c requestRecord = new Leave_Request__c(
             Employee__c = employee.Id,
-            Leave_Type__c = 'Sick',
+            Leave_Type_Definition__c = sickDefinition.Id,
             Start_Date__c = Date.today().addDays(3),
             End_Date__c = Date.today().addDays(3),
             Status__c = 'Draft',
@@ -69,11 +75,16 @@ private class LeaveApprovalHistoryServiceTest {
     @IsTest
     static void testLeaveExpiryBatchWritesCancellationHistory() {
         User employee = createEmployeeUser('expiryhistory');
+        Leave_Type_Definition__c annualDefinition = createLeaveTypeDefinition(
+            'ANNUAL',
+            'Annual Leave Policy',
+            'Manager Then HR'
+        );
 
         Leave_Request__c requestRecord = new Leave_Request__c(
             Employee__c = employee.Id,
             Manager__c = UserInfo.getUserId(),
-            Leave_Type__c = 'Annual',
+            Leave_Type_Definition__c = annualDefinition.Id,
             Start_Date__c = Date.today().addDays(-5),
             End_Date__c = Date.today().addDays(-2),
             Status__c = 'Pending_HR_Approval',
@@ -133,5 +144,22 @@ private class LeaveApprovalHistoryServiceTest {
         );
         insert employee;
         return employee;
+    }
+
+    private static Leave_Type_Definition__c createLeaveTypeDefinition(
+        String typeCode,
+        String name,
+        String approvalMode
+    ) {
+        Leave_Type_Definition__c definitionRecord = new Leave_Type_Definition__c(
+            Name = name,
+            Type_Code__c = typeCode,
+            Is_Active__c = true,
+            Allow_Carryover__c = typeCode == 'ANNUAL',
+            Approval_Mode__c = approvalMode,
+            Policy_Version__c = 1
+        );
+        insert definitionRecord;
+        return definitionRecord;
     }
 }

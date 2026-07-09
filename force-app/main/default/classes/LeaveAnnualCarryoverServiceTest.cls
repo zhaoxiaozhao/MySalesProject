@@ -68,6 +68,15 @@ private class LeaveAnnualCarryoverServiceTest {
     static void testDeductBalanceConsumesCarryoverFirst() {
         Integer yearValue = Date.today().year();
 
+        Leave_Type_Definition__c annualDefinition = new Leave_Type_Definition__c(
+            Name = 'Annual Leave Policy',
+            Type_Code__c = 'ANNUAL',
+            Is_Active__c = true,
+            Allow_Carryover__c = true,
+            Policy_Version__c = 1
+        );
+        insert annualDefinition;
+
         insert new Leave_Balance__c(
             User__c = UserInfo.getUserId(),
             Year__c = yearValue,
@@ -80,7 +89,7 @@ private class LeaveAnnualCarryoverServiceTest {
 
         Leave_Request__c requestRecord = new Leave_Request__c(
             Employee__c = UserInfo.getUserId(),
-            Leave_Type__c = 'Annual',
+            Leave_Type_Definition__c = annualDefinition.Id,
             Start_Date__c = Date.today(),
             End_Date__c = Date.today().addDays(4),
             Days__c = 5,

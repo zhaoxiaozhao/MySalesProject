@@ -43,7 +43,7 @@
         <layoutColumns>
             <layoutItems>
                 <behavior>Edit</behavior>
-                <field>Leave_Type__c</field>
+                <field>Leave_Type_Definition__c</field>
             </layoutItems>
             <layoutItems>
                 <behavior>Readonly</behavior>
@@ -61,7 +61,7 @@
         <layoutColumns>
             <layoutItems>
                 <behavior>Readonly</behavior>
-                <field>Leave_Type_Code__c</field>
+                <field>Approval_Mode_Snapshot__c</field>
             </layoutItems>
             <layoutItems>
                 <behavior>Readonly</behavior>
@@ -86,7 +86,7 @@
         <layoutColumns>
             <layoutItems>
                 <behavior>Readonly</behavior>
-                <field>Leave_Type_Definition__c</field>
+                <field>Leave_Type_Code__c</field>
             </layoutItems>
         </layoutColumns>
         <style>OneColumn</style>

@@ -30,6 +30,13 @@ public without sharing class LeaveTypePolicyService {
             : buildDefaultPolicy(typeCode);
     }
 
+    public static LeaveTypePolicy getPolicyByDefinitionId(Id definitionId) {
+        Map<Id, LeaveTypePolicy> policyByDefinitionId = getPoliciesByDefinitionIds(
+            new Set<Id>{ definitionId }
+        );
+        return policyByDefinitionId.get(definitionId);
+    }
+
     public static Map<String, LeaveTypePolicy> getPoliciesByTypeCodes(Set<String> typeCodes) {
         Map<String, LeaveTypePolicy> policyByTypeCode = new Map<String, LeaveTypePolicy>();
         Set<String> normalizedCodes = new Set<String>();
@@ -80,6 +87,32 @@ public without sharing class LeaveTypePolicyService {
         return policyByTypeCode;
     }
 
+    public static Map<Id, LeaveTypePolicy> getPoliciesByDefinitionIds(Set<Id> definitionIds) {
+        Map<Id, LeaveTypePolicy> policyByDefinitionId = new Map<Id, LeaveTypePolicy>();
+        Set<Id> filteredDefinitionIds = new Set<Id>();
+        for (Id definitionId : definitionIds) {
+            if (definitionId != null) {
+                filteredDefinitionIds.add(definitionId);
+            }
+        }
+
+        if (filteredDefinitionIds.isEmpty()) {
+            return policyByDefinitionId;
+        }
+
+        for (Leave_Type_Definition__c definition : [
+            SELECT Id, Name, Type_Code__c, Is_Active__c, Allow_Carryover__c, Carryover_Limit__c,
+                   Carryover_Expire_Month__c, Carryover_Expire_Day__c, Requires_HR_Approval__c,
+                   Approval_Mode__c, Auto_Approve_Below_Days__c, Escalate_Above_Days__c,
+                   Escalation_Target__c, Approval_Group_Key__c, Policy_Version__c
+            FROM Leave_Type_Definition__c
+            WHERE Id IN :filteredDefinitionIds
+        ]) {
+            policyByDefinitionId.put(definition.Id, buildPolicyFromDefinition(definition));
+        }
+        return policyByDefinitionId;
+    }
+
     public static String normalizeLeaveTypeValue(String leaveTypeValue) {
         if (String.isBlank(leaveTypeValue)) {
             return null;
@@ -116,6 +149,29 @@ public without sharing class LeaveTypePolicyService {
         policy.escalationTarget = 'HR';
         policy.approvalGroupKey = null;
         policy.policyVersion = 1;
+        return policy;
+    }
+
+    private static LeaveTypePolicy buildPolicyFromDefinition(Leave_Type_Definition__c definition) {
+        LeaveTypePolicy policy = buildDefaultPolicy(definition.Type_Code__c);
+        policy.definitionId = definition.Id;
+        policy.typeCode = definition.Type_Code__c;
+        policy.typeName = definition.Name;
+        policy.isDefined = true;
+        policy.isActive = definition.Is_Active__c;
+        policy.allowCarryover = definition.Allow_Carryover__c;
+        policy.carryoverLimit = definition.Carryover_Limit__c;
+        policy.carryoverExpireMonth = toInteger(definition.Carryover_Expire_Month__c);
+        policy.carryoverExpireDay = toInteger(definition.Carryover_Expire_Day__c);
+        policy.requiresHrApproval = definition.Requires_HR_Approval__c;
+        policy.approvalMode = String.isBlank(definition.Approval_Mode__c)
+            ? resolveDefaultApprovalMode(definition.Requires_HR_Approval__c)
+            : definition.Approval_Mode__c;
+        policy.autoApproveBelowDays = definition.Auto_Approve_Below_Days__c;
+        policy.escalateAboveDays = definition.Escalate_Above_Days__c;
+        policy.escalationTarget = definition.Escalation_Target__c;
+        policy.approvalGroupKey = definition.Approval_Group_Key__c;
+        policy.policyVersion = definition.Policy_Version__c;
         return policy;
     }
 

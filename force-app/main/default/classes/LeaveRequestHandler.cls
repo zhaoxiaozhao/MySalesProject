@@ -1,10 +1,10 @@
 public without sharing class LeaveRequestHandler {
 
     public void beforeInsert(List<Leave_Request__c> records) {
-        Map<String, LeaveTypePolicyService.LeaveTypePolicy> policyByTypeCode =
-            getPolicyByTypeCode(records);
+        Map<Id, LeaveTypePolicyService.LeaveTypePolicy> policyByDefinitionId =
+            getPoliciesByDefinitionId(records);
         for (Leave_Request__c req : records) {
-            applyLeaveTypeSnapshot(req, policyByTypeCode);
+            applyLeaveTypeSnapshot(req, policyByDefinitionId);
             if (req.Employee__c == null) {
                 req.Employee__c = UserInfo.getUserId();
             }
@@ -20,13 +20,14 @@ public without sharing class LeaveRequestHandler {
     public void beforeUpdate(List<Leave_Request__c> records, Map<Id, Leave_Request__c> oldMap) {
         Set<Id> employeeIds = new Set<Id>();
         Map<Id, User> userMap = new Map<Id, User>();
-        Map<String, LeaveTypePolicyService.LeaveTypePolicy> policyByTypeCode =
-            getPolicyByTypeCode(records);
+        Map<Id, LeaveTypePolicyService.LeaveTypePolicy> policyByDefinitionId =
+            getPoliciesByDefinitionId(records);
 
         for (Leave_Request__c req : records) {
             Leave_Request__c old = oldMap.get(req.Id);
-            if (req.Leave_Type__c != old.Leave_Type__c || req.Leave_Type_Definition__c == null) {
-                applyLeaveTypeSnapshot(req, policyByTypeCode);
+            if (req.Leave_Type_Definition__c != old.Leave_Type_Definition__c ||
+                String.isBlank(req.Leave_Type_Code__c)) {
+                applyLeaveTypeSnapshot(req, policyByDefinitionId);
             }
 
             if (req.Start_Date__c != null && req.End_Date__c != null
@@ -77,16 +78,16 @@ public without sharing class LeaveRequestHandler {
             }
 
             try {
-                validateLeaveTypePolicy(req, policyByTypeCode);
-                LeaveService.validateBalance(
+                validateLeaveTypePolicy(req, policyByDefinitionId);
+                LeaveBalanceLedgerService.validateBalance(
                     req.Employee__c,
-                    req.Leave_Type__c,
-                    req.Days__c,
+                    req.Leave_Type_Definition__c,
+                    req.Leave_Type_Code__c,
                     req.Start_Date__c,
                     req.End_Date__c,
                     req.Id
                 );
-                applyApprovalRouting(req, policyByTypeCode);
+                applyApprovalRouting(req, policyByDefinitionId);
             } catch (IllegalArgumentException e) {
                 req.addError(e.getMessage());
             }
@@ -108,15 +109,23 @@ public without sharing class LeaveRequestHandler {
                 requestsToSyncSegments.add(req);
             }
 
-            if (req.Status__c == 'Approved' && old.Status__c != 'Approved') {
-                LeaveService.handleApprovalResult(req.Id, true);
-            } else if (req.Status__c == 'Rejected' && old.Status__c != 'Rejected') {
-                LeaveService.handleApprovalResult(req.Id, false);
-            }
         }
 
         if (!LeaveApprovalHistoryService.isTransitionHistorySuppressed()) {
             LeaveApprovalHistoryService.createTransitionHistories(records, oldMap);
+        }
+
+        for (Leave_Request__c req : records) {
+            Leave_Request__c old = oldMap.get(req.Id);
+            if (isDraftSubmission(old, req)) {
+                LeaveBalanceLedgerService.reserveBalance(req.Id);
+            }
+            if (req.Status__c == 'Approved' && old.Status__c != 'Approved') {
+                LeaveBalanceLedgerService.consumeReservedBalance(req.Id);
+            } else if ((req.Status__c == 'Rejected' || req.Status__c == 'Cancelled')
+                && req.Status__c != old.Status__c) {
+                LeaveBalanceLedgerService.releaseReservedBalance(req.Id, null);
+            }
         }
 
         if (!requestsToSyncSegments.isEmpty()) {
@@ -126,29 +135,43 @@ public without sharing class LeaveRequestHandler {
 
     private static void applyLeaveTypeSnapshot(
         Leave_Request__c req,
-        Map<String, LeaveTypePolicyService.LeaveTypePolicy> policyByTypeCode
+        Map<Id, LeaveTypePolicyService.LeaveTypePolicy> policyByDefinitionId
     ) {
-        String typeCode = LeaveTypePolicyService.normalizeLeaveTypeValue(req.Leave_Type__c);
-        LeaveTypePolicyService.LeaveTypePolicy policy = policyByTypeCode.get(typeCode);
+        if (req.Leave_Type_Definition__c == null) {
+            req.addError('Leave type definition is required.');
+            return;
+        }
+
+        LeaveTypePolicyService.LeaveTypePolicy policy = policyByDefinitionId.get(req.Leave_Type_Definition__c);
         if (policy == null) {
-            policy = LeaveTypePolicyService.getPolicyByTypeCode(typeCode);
+            policy = LeaveTypePolicyService.getPolicyByDefinitionId(req.Leave_Type_Definition__c);
+        }
+        if (policy == null) {
+            req.addError('Selected leave type definition does not exist.');
+            return;
         }
         req.Leave_Type_Code__c = policy.typeCode;
-        req.Leave_Type_Name__c = policy.isDefined && !String.isBlank(policy.typeName)
-            ? policy.typeName
-            : req.Leave_Type__c;
+        req.Leave_Type_Name__c = policy.typeName;
         req.Policy_Version__c = policy.policyVersion;
         req.Leave_Type_Definition__c = policy.definitionId;
     }
 
     private static void validateLeaveTypePolicy(
         Leave_Request__c req,
-        Map<String, LeaveTypePolicyService.LeaveTypePolicy> policyByTypeCode
+        Map<Id, LeaveTypePolicyService.LeaveTypePolicy> policyByDefinitionId
     ) {
-        String typeCode = LeaveTypePolicyService.normalizeLeaveTypeValue(req.Leave_Type__c);
-        LeaveTypePolicyService.LeaveTypePolicy policy = policyByTypeCode.get(typeCode);
+        if (req.Leave_Type_Definition__c == null) {
+            req.addError('Leave type definition is required.');
+            return;
+        }
+
+        LeaveTypePolicyService.LeaveTypePolicy policy = policyByDefinitionId.get(req.Leave_Type_Definition__c);
         if (policy == null) {
-            policy = LeaveTypePolicyService.getPolicyByTypeCode(typeCode);
+            policy = LeaveTypePolicyService.getPolicyByDefinitionId(req.Leave_Type_Definition__c);
+        }
+        if (policy == null) {
+            req.addError('Selected leave type definition does not exist.');
+            return;
         }
         if (policy.isDefined && !policy.isActive) {
             req.addError('Selected leave type is inactive. Please choose another leave type.');
@@ -157,12 +180,11 @@ public without sharing class LeaveRequestHandler {
 
     private static void applyApprovalRouting(
         Leave_Request__c req,
-        Map<String, LeaveTypePolicyService.LeaveTypePolicy> policyByTypeCode
+        Map<Id, LeaveTypePolicyService.LeaveTypePolicy> policyByDefinitionId
     ) {
-        String typeCode = LeaveTypePolicyService.normalizeLeaveTypeValue(req.Leave_Type__c);
-        LeaveTypePolicyService.LeaveTypePolicy policy = policyByTypeCode.get(typeCode);
+        LeaveTypePolicyService.LeaveTypePolicy policy = policyByDefinitionId.get(req.Leave_Type_Definition__c);
         if (policy == null) {
-            policy = LeaveTypePolicyService.getPolicyByTypeCode(typeCode);
+            policy = LeaveTypePolicyService.getPolicyByDefinitionId(req.Leave_Type_Definition__c);
         }
 
         LeaveApprovalRoutingService.RoutingDecision decision =
@@ -182,15 +204,15 @@ public without sharing class LeaveRequestHandler {
                 || req.Status__c == 'Pending_HR_Approval' || req.Status__c == 'Approved');
     }
 
-    private static Map<String, LeaveTypePolicyService.LeaveTypePolicy> getPolicyByTypeCode(
+    private static Map<Id, LeaveTypePolicyService.LeaveTypePolicy> getPoliciesByDefinitionId(
         List<Leave_Request__c> records
     ) {
-        Set<String> typeCodes = new Set<String>();
+        Set<Id> definitionIds = new Set<Id>();
         for (Leave_Request__c req : records) {
-            if (!String.isBlank(req.Leave_Type__c)) {
-                typeCodes.add(LeaveTypePolicyService.normalizeLeaveTypeValue(req.Leave_Type__c));
+            if (req.Leave_Type_Definition__c != null) {
+                definitionIds.add(req.Leave_Type_Definition__c);
             }
         }
-        return LeaveTypePolicyService.getPoliciesByTypeCodes(typeCodes);
+        return LeaveTypePolicyService.getPoliciesByDefinitionIds(definitionIds);
     }
 }

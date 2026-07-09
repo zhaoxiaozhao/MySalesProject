@@ -83,4 +83,107 @@ private class LeaveApprovalRoutingServiceTest {
             )
         );
     }
+
+    @IsTest
+    static void testHrApprovalResolvesQueueMemberApprover() {
+        User approver = createUser('hrqueue');
+        Group queueGroup = new Group(
+            Name = 'HR Queue Routing',
+            DeveloperName = 'HR_QUEUE_ROUTING',
+            Type = 'Queue'
+        );
+        insert queueGroup;
+        insert new GroupMember(
+            GroupId = queueGroup.Id,
+            UserOrGroupId = approver.Id
+        );
+
+        LeaveApprovalRoutingService.clearApproverResolverCache();
+
+        Leave_Request__c requestRecord = new Leave_Request__c(
+            Status__c = 'Pending_HR_Approval',
+            Approval_Target_Snapshot__c = 'HR_QUEUE_ROUTING'
+        );
+
+        Assert.areEqual(
+            approver.Id,
+            LeaveApprovalRoutingService.resolveApproverId(requestRecord, 'Submit', 'Submitted')
+        );
+        Assert.areEqual(
+            approver.Id,
+            LeaveApprovalRoutingService.resolveApproverId(requestRecord, 'HR_Approval', 'Approved')
+        );
+        Assert.areEqual(
+            'HR_QUEUE_ROUTING',
+            LeaveApprovalRoutingService.resolveApproverTarget(requestRecord, 'HR_Approval', 'Approved')
+        );
+    }
+
+    @IsTest
+    static void testHrApprovalResolvesNestedGroupMemberAndDirectUserId() {
+        User approver = createUser('nestedgrp');
+        Group childGroup = new Group(
+            Name = 'Child Routing Group',
+            DeveloperName = 'CHILD_ROUTING_GROUP',
+            Type = 'Regular'
+        );
+        Group parentGroup = new Group(
+            Name = 'Parent Routing Group',
+            DeveloperName = 'PARENT_ROUTING_GROUP',
+            Type = 'Regular'
+        );
+        insert new List<Group>{ childGroup, parentGroup };
+        insert new List<GroupMember>{
+            new GroupMember(
+                GroupId = childGroup.Id,
+                UserOrGroupId = approver.Id
+            ),
+            new GroupMember(
+                GroupId = parentGroup.Id,
+                UserOrGroupId = childGroup.Id
+            )
+        };
+
+        LeaveApprovalRoutingService.clearApproverResolverCache();
+
+        Leave_Request__c nestedTargetRequest = new Leave_Request__c(
+            Status__c = 'Pending_HR_Approval',
+            Approval_Target_Snapshot__c = 'PARENT_ROUTING_GROUP'
+        );
+        Leave_Request__c directUserTargetRequest = new Leave_Request__c(
+            Status__c = 'Pending_HR_Approval',
+            Approval_Target_Snapshot__c = approver.Id
+        );
+
+        Assert.areEqual(
+            approver.Id,
+            LeaveApprovalRoutingService.resolveApproverId(nestedTargetRequest, 'HR_Approval', 'Approved')
+        );
+        Assert.areEqual(
+            approver.Id,
+            LeaveApprovalRoutingService.resolveApproverId(directUserTargetRequest, 'HR_Approval', 'Approved')
+        );
+    }
+
+    private static User createUser(String key) {
+        User currentUser = [
+            SELECT ProfileId
+            FROM User
+            WHERE Id = :UserInfo.getUserId()
+        ];
+        String uniqueToken = key + String.valueOf(DateTime.now().getTime());
+        User userRecord = new User(
+            Alias = uniqueToken.substring(0, Math.min(8, uniqueToken.length())),
+            Email = uniqueToken + '@example.com',
+            EmailEncodingKey = 'UTF-8',
+            LastName = 'Routing',
+            LanguageLocaleKey = 'en_US',
+            LocaleSidKey = 'en_US',
+            ProfileId = currentUser.ProfileId,
+            TimeZoneSidKey = 'America/Los_Angeles',
+            Username = uniqueToken + '@example.com'
+        );
+        insert userRecord;
+        return userRecord;
+    }
 }

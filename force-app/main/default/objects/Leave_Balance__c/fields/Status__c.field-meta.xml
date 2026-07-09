@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
-    <fullName>Leave_Type__c</fullName>
+    <fullName>Status__c</fullName>
     <externalId>false</externalId>
-    <label>Leave Type</label>
+    <label>Status</label>
     <required>false</required>
     <trackTrending>false</trackTrending>
     <type>Picklist</type>
@@ -10,19 +10,19 @@
         <valueSetDefinition>
             <sorted>false</sorted>
             <value>
-                <fullName>Annual</fullName>
-                <default>false</default>
-                <label>Annual</label>
+                <fullName>Open</fullName>
+                <default>true</default>
+                <label>Open</label>
             </value>
             <value>
-                <fullName>Sick</fullName>
+                <fullName>Closed</fullName>
                 <default>false</default>
-                <label>Sick</label>
+                <label>Closed</label>
             </value>
             <value>
-                <fullName>Personal</fullName>
+                <fullName>Archived</fullName>
                 <default>false</default>
-                <label>Personal</label>
+                <label>Archived</label>
             </value>
         </valueSetDefinition>
     </valueSet>

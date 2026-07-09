@@ -1,10 +1,19 @@
 @IsTest
 private class LeaveServiceTest {
 
+    private static Map<String, Leave_Type_Definition__c> leaveTypeDefinitionByCode =
+        new Map<String, Leave_Type_Definition__c>();
+
     @IsTest
     static void testRejectLeaveUsesHrStageHistory() {
         User employee = createEmployeeUser('rejecthr');
         Integer yearValue = Date.today().year();
+        Leave_Type_Definition__c annualDefinition = createLeaveTypeDefinition(
+            'ANNUAL',
+            'Annual Leave Policy',
+            true,
+            'HR Only'
+        );
 
         insert new Leave_Balance__c(
             User__c = employee.Id,
@@ -17,7 +26,7 @@ private class LeaveServiceTest {
         Leave_Request__c requestRecord = new Leave_Request__c(
             Employee__c = employee.Id,
             Manager__c = UserInfo.getUserId(),
-            Leave_Type__c = 'Annual',
+            Leave_Type_Definition__c = annualDefinition.Id,
             Start_Date__c = Date.today().addDays(5),
             End_Date__c = Date.today().addDays(6),
             Status__c = 'Pending_HR_Approval',
@@ -53,11 +62,81 @@ private class LeaveServiceTest {
     }
 
     @IsTest
+    static void testSubmitLeaveManagerPathCreatesApprovalProcessInstance() {
+        User employee = createEmployeeUser('submitmgr');
+        Integer yearValue = Date.today().year();
+
+        Leave_Type_Definition__c annualDefinition = new Leave_Type_Definition__c(
+            Name = 'Annual Leave Manager Policy',
+            Type_Code__c = 'ANNUAL',
+            Is_Active__c = true,
+            Allow_Carryover__c = true,
+            Approval_Mode__c = 'Manager Then HR',
+            Approval_Group_Key__c = 'HR_QUEUE',
+            Policy_Version__c = 12
+        );
+        insert annualDefinition;
+        insert new Leave_Balance__c(
+            User__c = employee.Id,
+            Year__c = yearValue,
+            Annual_Leave__c = 10,
+            Sick_Leave__c = 5,
+            Personal_Leave__c = 5
+        );
+
+        Leave_Request__c requestRecord = new Leave_Request__c(
+            OwnerId = employee.Id,
+            Employee__c = employee.Id,
+            Leave_Type_Definition__c = annualDefinition.Id,
+            Start_Date__c = Date.today().addDays(14),
+            End_Date__c = Date.today().addDays(15),
+            Status__c = 'Draft',
+            Balance_Deducted__c = false
+        );
+        insert requestRecord;
+
+        Test.startTest();
+        LeaveService.submitLeave(requestRecord.Id);
+        Test.stopTest();
+
+        Leave_Request__c submittedRequest = [
+            SELECT Status__c, Manager__c, Submitted_Time__c, Approval_Mode_Snapshot__c, Approval_Target_Snapshot__c
+            FROM Leave_Request__c
+            WHERE Id = :requestRecord.Id
+        ];
+        List<Leave_Approval_History__c> histories = [
+            SELECT Stage__c, Action__c, Approver__c, Approver_Target__c, Approval_Mode_Snapshot__c
+            FROM Leave_Approval_History__c
+            WHERE Leave_Request__c = :requestRecord.Id
+            ORDER BY CreatedDate
+        ];
+        List<ProcessInstance> instances = [
+            SELECT Id, Status, TargetObjectId
+            FROM ProcessInstance
+            WHERE TargetObjectId = :requestRecord.Id
+        ];
+
+        Assert.areEqual('Pending_Manager_Approval', submittedRequest.Status__c);
+        Assert.areEqual(UserInfo.getUserId(), submittedRequest.Manager__c);
+        Assert.isNotNull(submittedRequest.Submitted_Time__c);
+        Assert.areEqual('Manager Then HR', submittedRequest.Approval_Mode_Snapshot__c);
+        Assert.areEqual('HR_QUEUE', submittedRequest.Approval_Target_Snapshot__c);
+        Assert.areEqual(1, histories.size(), 'Manager-path submission should create one submitted history.');
+        Assert.areEqual('Submit', histories[0].Stage__c);
+        Assert.areEqual('Submitted', histories[0].Action__c);
+        Assert.areEqual(UserInfo.getUserId(), histories[0].Approver__c);
+        Assert.areEqual('Manager', histories[0].Approver_Target__c);
+        Assert.areEqual('Manager Then HR', histories[0].Approval_Mode_Snapshot__c);
+        Assert.areEqual(1, instances.size(), 'Manager-path submit should create a real approval process instance.');
+        Assert.areEqual('Pending', instances[0].Status);
+    }
+
+    @IsTest
     static void testSubmitLeaveHrOnlySkipsApprovalProcessAndCreatesSubmittedHistory() {
         User employee = createEmployeeUser('submithr');
         Integer yearValue = Date.today().year();
 
-        insert new Leave_Type_Definition__c(
+        Leave_Type_Definition__c annualDefinition = new Leave_Type_Definition__c(
             Name = 'Annual Leave HR Policy',
             Type_Code__c = 'ANNUAL',
             Is_Active__c = true,
@@ -66,6 +145,7 @@ private class LeaveServiceTest {
             Approval_Group_Key__c = 'HR_QUEUE',
             Policy_Version__c = 11
         );
+        insert annualDefinition;
         insert new Leave_Balance__c(
             User__c = employee.Id,
             Year__c = yearValue,
@@ -76,7 +156,7 @@ private class LeaveServiceTest {
 
         Leave_Request__c requestRecord = new Leave_Request__c(
             Employee__c = employee.Id,
-            Leave_Type__c = 'Annual',
+            Leave_Type_Definition__c = annualDefinition.Id,
             Start_Date__c = Date.today().addDays(9),
             End_Date__c = Date.today().addDays(10),
             Status__c = 'Draft',
@@ -124,7 +204,7 @@ private class LeaveServiceTest {
         User employee = createEmployeeUser('submitauto');
         Integer yearValue = Date.today().year();
 
-        insert new Leave_Type_Definition__c(
+        Leave_Type_Definition__c sickDefinition = new Leave_Type_Definition__c(
             Name = 'Sick Leave Auto Policy',
             Type_Code__c = 'SICK',
             Is_Active__c = true,
@@ -133,6 +213,7 @@ private class LeaveServiceTest {
             Auto_Approve_Below_Days__c = 1,
             Policy_Version__c = 6
         );
+        insert sickDefinition;
         insert new Leave_Balance__c(
             User__c = employee.Id,
             Year__c = yearValue,
@@ -143,7 +224,7 @@ private class LeaveServiceTest {
 
         Leave_Request__c requestRecord = new Leave_Request__c(
             Employee__c = employee.Id,
-            Leave_Type__c = 'Sick',
+            Leave_Type_Definition__c = sickDefinition.Id,
             Start_Date__c = Date.today().addDays(12),
             End_Date__c = Date.today().addDays(12),
             Status__c = 'Draft',
@@ -200,7 +281,7 @@ private class LeaveServiceTest {
 
         Leave_Request__c requestRecord = new Leave_Request__c(
             Employee__c = employee.Id,
-            Leave_Type__c = 'Annual',
+            Leave_Type_Definition__c = createLeaveTypeDefinition('ANNUAL', 'Annual Leave Policy', true, 'Manager Only').Id,
             Start_Date__c = Date.today().addDays(4),
             End_Date__c = Date.today().addDays(4),
             Status__c = 'Draft',
@@ -231,7 +312,7 @@ private class LeaveServiceTest {
 
         Leave_Request__c requestRecord = new Leave_Request__c(
             Employee__c = employee.Id,
-            Leave_Type__c = 'Annual',
+            Leave_Type_Definition__c = createLeaveTypeDefinition('ANNUAL', 'Annual Leave Policy', true, 'Manager Only').Id,
             Start_Date__c = Date.today().addDays(2),
             End_Date__c = Date.today().addDays(2),
             Status__c = 'Draft',
@@ -251,6 +332,12 @@ private class LeaveServiceTest {
     static void testApproveLeaveManagerStageEscalatesToHrWithoutDeductingBalance() {
         User employee = createEmployeeUser('approveescalate');
         Integer yearValue = Date.today().year();
+        Leave_Type_Definition__c annualDefinition = createLeaveTypeDefinition(
+            'ANNUAL',
+            'Annual Leave Policy',
+            true,
+            'Manager Then HR'
+        );
 
         insert new Leave_Balance__c(
             User__c = employee.Id,
@@ -263,7 +350,7 @@ private class LeaveServiceTest {
         Leave_Request__c requestRecord = new Leave_Request__c(
             Employee__c = employee.Id,
             Manager__c = UserInfo.getUserId(),
-            Leave_Type__c = 'Annual',
+            Leave_Type_Definition__c = annualDefinition.Id,
             Start_Date__c = Date.today().addDays(7),
             End_Date__c = Date.today().addDays(8),
             Status__c = 'Pending_Manager_Approval',
@@ -308,6 +395,112 @@ private class LeaveServiceTest {
     }
 
     @IsTest
+    static void testCancelLeaveDraftRequestWritesCancellationHistory() {
+        User employee = createEmployeeUser('canceldraft');
+
+        Leave_Request__c requestRecord = new Leave_Request__c(
+            Employee__c = employee.Id,
+            Leave_Type_Definition__c = createLeaveTypeDefinition('ANNUAL', 'Annual Leave Policy', true, 'Manager Only').Id,
+            Start_Date__c = Date.today().addDays(6),
+            End_Date__c = Date.today().addDays(6),
+            Status__c = 'Draft',
+            Balance_Deducted__c = false
+        );
+        insert requestRecord;
+
+        Test.startTest();
+        LeaveService.cancelLeave(requestRecord.Id, UserInfo.getUserId(), 'Cancelled draft');
+        Test.stopTest();
+
+        Leave_Request__c cancelledRequest = [
+            SELECT Status__c
+            FROM Leave_Request__c
+            WHERE Id = :requestRecord.Id
+        ];
+        Leave_Approval_History__c history = [
+            SELECT Stage__c, Action__c, Approver__c, Comments__c
+            FROM Leave_Approval_History__c
+            WHERE Leave_Request__c = :requestRecord.Id
+            AND Stage__c = 'Cancellation'
+            ORDER BY CreatedDate DESC
+            LIMIT 1
+        ];
+
+        Assert.areEqual('Cancelled', cancelledRequest.Status__c);
+        Assert.areEqual('Cancellation', history.Stage__c);
+        Assert.areEqual('Cancelled', history.Action__c);
+        Assert.areEqual(UserInfo.getUserId(), history.Approver__c);
+        Assert.areEqual('Cancelled draft', history.Comments__c);
+    }
+
+    @IsTest
+    static void testCancelLeaveRecallsApprovalInstance() {
+        User employee = createEmployeeUser('cancelpending');
+        Integer yearValue = Date.today().year();
+
+        Leave_Type_Definition__c annualDefinition = new Leave_Type_Definition__c(
+            Name = 'Annual Leave Cancel Policy',
+            Type_Code__c = 'ANNUAL',
+            Is_Active__c = true,
+            Allow_Carryover__c = true,
+            Approval_Mode__c = 'Manager Then HR',
+            Approval_Group_Key__c = 'HR_QUEUE',
+            Policy_Version__c = 13
+        );
+        insert annualDefinition;
+        insert new Leave_Balance__c(
+            User__c = employee.Id,
+            Year__c = yearValue,
+            Annual_Leave__c = 10,
+            Sick_Leave__c = 5,
+            Personal_Leave__c = 5
+        );
+
+        Leave_Request__c requestRecord = new Leave_Request__c(
+            OwnerId = employee.Id,
+            Employee__c = employee.Id,
+            Leave_Type_Definition__c = annualDefinition.Id,
+            Start_Date__c = Date.today().addDays(9),
+            End_Date__c = Date.today().addDays(10),
+            Status__c = 'Draft',
+            Balance_Deducted__c = false
+        );
+        insert requestRecord;
+
+        Test.startTest();
+        LeaveService.submitLeave(requestRecord.Id);
+        LeaveService.cancelLeave(requestRecord.Id, UserInfo.getUserId(), 'Cancelled pending approval');
+        Test.stopTest();
+
+        Leave_Request__c cancelledRequest = [
+            SELECT Status__c, Balance_Deducted__c
+            FROM Leave_Request__c
+            WHERE Id = :requestRecord.Id
+        ];
+        Integer pendingWorkItems = [
+            SELECT COUNT()
+            FROM ProcessInstanceWorkitem
+            WHERE ProcessInstance.TargetObjectId = :requestRecord.Id
+            AND ProcessInstance.Status = 'Pending'
+        ];
+        Leave_Approval_History__c history = [
+            SELECT Stage__c, Action__c, Approver__c, Comments__c
+            FROM Leave_Approval_History__c
+            WHERE Leave_Request__c = :requestRecord.Id
+            ORDER BY CreatedDate DESC
+            LIMIT 1
+        ];
+
+        Assert.areEqual('Cancelled', cancelledRequest.Status__c);
+        Assert.areEqual(false, cancelledRequest.Balance_Deducted__c);
+        Assert.areEqual(0, pendingWorkItems, 'Pending approval work item should be recalled.');
+        Assert.areEqual('Cancellation', history.Stage__c);
+        Assert.areEqual('Cancelled', history.Action__c);
+        Assert.areEqual(UserInfo.getUserId(), history.Approver__c);
+        Assert.areEqual('Cancelled pending approval', history.Comments__c);
+    }
+
+    @IsTest
     static void testValidateBalanceThrowsWhenExistingUsageConsumesRemainingDays() {
         User employee = createEmployeeUser('balanceusage');
         Integer yearValue = Date.today().year();
@@ -322,7 +515,7 @@ private class LeaveServiceTest {
 
         Leave_Request__c existingRequest = new Leave_Request__c(
             Employee__c = employee.Id,
-            Leave_Type__c = 'Sick',
+            Leave_Type_Definition__c = createLeaveTypeDefinition('SICK', 'Sick Leave Policy', true, 'Manager Only').Id,
             Start_Date__c = Date.today().addDays(1),
             End_Date__c = Date.today().addDays(3),
             Status__c = 'Approved',
@@ -332,7 +525,7 @@ private class LeaveServiceTest {
 
         Leave_Request__c editedRequest = new Leave_Request__c(
             Employee__c = employee.Id,
-            Leave_Type__c = 'Sick',
+            Leave_Type_Definition__c = createLeaveTypeDefinition('SICK', 'Sick Leave Policy B', true, 'Manager Only').Id,
             Start_Date__c = Date.today().addDays(10),
             End_Date__c = Date.today().addDays(10),
             Status__c = 'Draft',
@@ -343,7 +536,7 @@ private class LeaveServiceTest {
         try {
             LeaveService.validateBalance(
                 employee.Id,
-                'Sick',
+                'SICK',
                 3,
                 Date.today().addDays(10),
                 Date.today().addDays(12),
@@ -351,7 +544,7 @@ private class LeaveServiceTest {
             );
             Assert.fail('Existing approved usage should reduce the remaining balance.');
         } catch (IllegalArgumentException ex) {
-            Assert.isTrue(ex.getMessage().contains('Insufficient Sick balance'));
+            Assert.isTrue(ex.getMessage().contains('Insufficient SICK balance'));
         }
     }
 
@@ -370,7 +563,7 @@ private class LeaveServiceTest {
 
         Leave_Request__c sickRequest = new Leave_Request__c(
             Employee__c = employee.Id,
-            Leave_Type__c = 'Sick',
+            Leave_Type_Definition__c = createLeaveTypeDefinition('SICK', 'Sick Leave Policy', true, 'Manager Only').Id,
             Start_Date__c = Date.today().addDays(15),
             End_Date__c = Date.today().addDays(16),
             Status__c = 'Approved',
@@ -378,7 +571,7 @@ private class LeaveServiceTest {
         );
         Leave_Request__c personalRequest = new Leave_Request__c(
             Employee__c = employee.Id,
-            Leave_Type__c = 'Personal',
+            Leave_Type_Definition__c = createLeaveTypeDefinition('PERSONAL', 'Personal Leave Policy', true, 'Manager Only').Id,
             Start_Date__c = Date.today().addDays(20),
             End_Date__c = Date.today().addDays(20),
             Status__c = 'Approved',
@@ -411,7 +604,7 @@ private class LeaveServiceTest {
         try {
             LeaveService.validateBalance(
                 employee.Id,
-                'Annual',
+                'ANNUAL',
                 1,
                 Date.today().addDays(1),
                 Date.today().addDays(1),
@@ -440,7 +633,7 @@ private class LeaveServiceTest {
         try {
             LeaveService.validateBalance(
                 employee.Id,
-                'Annual',
+                'ANNUAL',
                 3,
                 Date.newInstance(currentYear, 12, 31),
                 Date.newInstance(nextYear, 1, 2),
@@ -461,7 +654,7 @@ private class LeaveServiceTest {
 
         Leave_Request__c approvedRequest = new Leave_Request__c(
             Employee__c = employee.Id,
-            Leave_Type__c = 'Annual',
+            Leave_Type_Definition__c = createLeaveTypeDefinition('ANNUAL', 'Annual Leave Policy', true, 'Manager Only').Id,
             Start_Date__c = Date.today().addDays(8),
             End_Date__c = Date.today().addDays(10),
             Status__c = 'Approved',
@@ -469,7 +662,7 @@ private class LeaveServiceTest {
         );
         Leave_Request__c draftRequest = new Leave_Request__c(
             Employee__c = employee.Id,
-            Leave_Type__c = 'Annual',
+            Leave_Type_Definition__c = createLeaveTypeDefinition('ANNUAL', 'Annual Leave Policy Draft', true, 'Manager Only').Id,
             Start_Date__c = Date.today().addDays(20),
             End_Date__c = Date.today().addDays(22),
             Status__c = 'Draft',
@@ -522,5 +715,31 @@ private class LeaveServiceTest {
         );
         insert employee;
         return employee;
+    }
+
+    private static Leave_Type_Definition__c createLeaveTypeDefinition(
+        String typeCode,
+        String name,
+        Boolean isActive,
+        String approvalMode
+    ) {
+        if (leaveTypeDefinitionByCode.containsKey(typeCode)) {
+            return leaveTypeDefinitionByCode.get(typeCode);
+        }
+
+        Leave_Type_Definition__c definitionRecord = new Leave_Type_Definition__c(
+            Name = name,
+            Type_Code__c = typeCode,
+            Is_Active__c = isActive,
+            Allow_Carryover__c = typeCode == 'ANNUAL',
+            Approval_Mode__c = approvalMode,
+            Approval_Group_Key__c = approvalMode == 'Manager Then HR' || approvalMode == 'HR Only'
+                ? 'HR_QUEUE'
+                : null,
+            Policy_Version__c = 1
+        );
+        insert definitionRecord;
+        leaveTypeDefinitionByCode.put(typeCode, definitionRecord);
+        return definitionRecord;
     }
 }

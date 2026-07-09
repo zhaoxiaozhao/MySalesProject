@@ -2,48 +2,59 @@
 <ApprovalProcess xmlns="http://soap.sforce.com/2006/04/metadata">
     <active>true</active>
     <allowRecall>true</allowRecall>
+    <allowedSubmitters>
+        <type>owner</type>
+    </allowedSubmitters>
+    <approvalPageFields>
+        <field>Name</field>
+        <field>Owner</field>
+        <field>Start_Date__c</field>
+        <field>End_Date__c</field>
+        <field>Reason__c</field>
+        <field>Leave_Type_Name__c</field>
+        <field>Employee__c</field>
+        <field>CreatedBy</field>
+        <field>Balance_Deducted__c</field>
+    </approvalPageFields>
+    <approvalStep>
+        <allowDelegate>false</allowDelegate>
+        <assignedApprover>
+            <approver>
+                <type>userHierarchyField</type>
+            </approver>
+        </assignedApprover>
+        <label>Manager Approval</label>
+        <name>Manager_Approval</name>
+    </approvalStep>
     <description>Standard leave request approval process with manager approval</description>
-    <label>Leave Request Approval</label>
-    <recordEditability>AdminOnly</recordEditability>
-    <showApprovalHistory>true</showApprovalHistory>
+    <enableMobileDeviceAccess>false</enableMobileDeviceAccess>
     <entryCriteria>
-        <booleanFilter>1</booleanFilter>
         <criteriaItems>
             <field>Leave_Request__c.Status__c</field>
             <operation>equals</operation>
             <value>Pending_Manager_Approval</value>
         </criteriaItems>
     </entryCriteria>
-    <approvalStep>
-        <allowDelegate>true</allowDelegate>
-        <name>Manager_Approval</name>
-        <userField>Manager__c</userField>
-        <rejectBehavior>
-            <type>RejectRequest</type>
-        </rejectBehavior>
-        <rejectedActions>
-            <actionReference>
-                <name>Set_Status_Rejected</name>
-                <type>FieldUpdate</type>
-            </actionReference>
-        </rejectedActions>
-        <approvedActions>
-            <actionReference>
-                <name>Set_Status_Approved</name>
-                <type>FieldUpdate</type>
-            </actionReference>
-        </approvedActions>
-    </approvalStep>
-    <fieldUpdates>
-        <fullName>Set_Status_Approved</fullName>
-        <field>Status__c</field>
-        <operation>Literal</operation>
-        <value>Approved</value>
-    </fieldUpdates>
-    <fieldUpdates>
-        <fullName>Set_Status_Rejected</fullName>
-        <field>Status__c</field>
-        <operation>Literal</operation>
-        <value>Rejected</value>
-    </fieldUpdates>
+    <finalApprovalActions>
+        <action>
+            <name>Set_Status_Approved</name>
+            <type>FieldUpdate</type>
+        </action>
+    </finalApprovalActions>
+    <finalApprovalRecordLock>true</finalApprovalRecordLock>
+    <finalRejectionActions>
+        <action>
+            <name>Set_Status_Rejected</name>
+            <type>FieldUpdate</type>
+        </action>
+    </finalRejectionActions>
+    <finalRejectionRecordLock>false</finalRejectionRecordLock>
+    <label>Leave Request Approval</label>
+    <nextAutomatedApprover>
+        <useApproverFieldOfRecordOwner>true</useApproverFieldOfRecordOwner>
+        <userHierarchyField>Manager</userHierarchyField>
+    </nextAutomatedApprover>
+    <processOrder>1</processOrder>
+    <recordEditability>AdminOnly</recordEditability>
+    <showApprovalHistory>true</showApprovalHistory>
 </ApprovalProcess>

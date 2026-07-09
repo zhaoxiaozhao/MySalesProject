@@ -24,6 +24,7 @@ private class LeaveRequestSegmentServiceTest {
     @IsTest
     static void testCrossYearValidationAndSegmentCreation() {
         User employee = createEmployeeUser('segmentsubmit');
+        Leave_Type_Definition__c annualDefinition = createAnnualDefinition();
         insert new Leave_Balance__c(
             User__c = employee.Id,
             Year__c = 2026,
@@ -41,7 +42,7 @@ private class LeaveRequestSegmentServiceTest {
 
         Leave_Request__c requestRecord = new Leave_Request__c(
             Employee__c = employee.Id,
-            Leave_Type__c = 'Annual',
+            Leave_Type_Definition__c = annualDefinition.Id,
             Start_Date__c = Date.newInstance(2026, 12, 30),
             End_Date__c = Date.newInstance(2027, 1, 3),
             Status__c = 'Draft',
@@ -74,6 +75,7 @@ private class LeaveRequestSegmentServiceTest {
     @IsTest
     static void testCrossYearDeductionConsumesBothYears() {
         User employee = createEmployeeUser('segmentdeduct');
+        Leave_Type_Definition__c annualDefinition = createAnnualDefinition();
         insert new Leave_Balance__c(
             User__c = employee.Id,
             Year__c = 2026,
@@ -91,7 +93,7 @@ private class LeaveRequestSegmentServiceTest {
 
         Leave_Request__c requestRecord = new Leave_Request__c(
             Employee__c = employee.Id,
-            Leave_Type__c = 'Annual',
+            Leave_Type_Definition__c = annualDefinition.Id,
             Start_Date__c = Date.newInstance(2026, 12, 30),
             End_Date__c = Date.newInstance(2027, 1, 3),
             Status__c = 'Approved',
@@ -138,5 +140,17 @@ private class LeaveRequestSegmentServiceTest {
         );
         insert employee;
         return employee;
+    }
+
+    private static Leave_Type_Definition__c createAnnualDefinition() {
+        Leave_Type_Definition__c definitionRecord = new Leave_Type_Definition__c(
+            Name = 'Annual Leave Policy',
+            Type_Code__c = 'ANNUAL',
+            Is_Active__c = true,
+            Allow_Carryover__c = true,
+            Policy_Version__c = 1
+        );
+        insert definitionRecord;
+        return definitionRecord;
     }
 }

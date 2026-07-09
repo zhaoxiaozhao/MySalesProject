@@ -1,5 +1,8 @@
 public without sharing class LeaveApprovalRoutingService {
 
+    @TestVisible
+    private static Map<String, Id> approverIdByTargetCache = new Map<String, Id>();
+
     public class RoutingDecision {
         public String nextStatus;
         public String approvalModeSnapshot;
@@ -83,6 +86,13 @@ public without sharing class LeaveApprovalRoutingService {
             requestRecord.Status__c == 'Pending_Manager_Approval') {
             return requestRecord.Manager__c;
         }
+        if (stage == 'HR_Approval') {
+            return resolveConfiguredApproverId(requestRecord.Approval_Target_Snapshot__c);
+        }
+        if (stage == 'Submit' && action == 'Submitted' &&
+            requestRecord.Status__c == 'Pending_HR_Approval') {
+            return resolveConfiguredApproverId(requestRecord.Approval_Target_Snapshot__c);
+        }
         return null;
     }
 
@@ -139,5 +149,88 @@ public without sharing class LeaveApprovalRoutingService {
 
     private static Set<String> getHrEscalationTargets() {
         return new Set<String>{ 'HR', 'Custom Queue' };
+    }
+
+    @TestVisible
+    static void clearApproverResolverCache() {
+        approverIdByTargetCache.clear();
+    }
+
+    private static Id resolveConfiguredApproverId(String approvalTarget) {
+        if (String.isBlank(approvalTarget) || isVirtualApprovalTarget(approvalTarget)) {
+            return null;
+        }
+        if (approverIdByTargetCache.containsKey(approvalTarget)) {
+            return approverIdByTargetCache.get(approvalTarget);
+        }
+
+        Id resolvedApproverId = tryResolveDirectUserId(approvalTarget);
+        if (resolvedApproverId == null) {
+            resolvedApproverId = resolveGroupMemberApproverId(approvalTarget);
+        }
+        approverIdByTargetCache.put(approvalTarget, resolvedApproverId);
+        return resolvedApproverId;
+    }
+
+    private static Boolean isVirtualApprovalTarget(String approvalTarget) {
+        return approvalTarget == 'HR'
+            || approvalTarget == 'Manager'
+            || approvalTarget == 'Auto'
+            || approvalTarget == 'System';
+    }
+
+    private static Id tryResolveDirectUserId(String approvalTarget) {
+        try {
+            Id targetId = (Id) approvalTarget;
+            if (targetId.getSObjectType() == User.SObjectType) {
+                return targetId;
+            }
+        } catch (Exception ex) {
+            return null;
+        }
+        return null;
+    }
+
+    private static Id resolveGroupMemberApproverId(String approvalTarget) {
+        List<Group> groups = [
+            SELECT Id
+            FROM Group
+            WHERE DeveloperName = :approvalTarget OR Name = :approvalTarget
+            ORDER BY DeveloperName
+            LIMIT 1
+        ];
+        if (groups.isEmpty()) {
+            return null;
+        }
+        return resolveFirstUserMember(groups[0].Id, new Set<Id>());
+    }
+
+    private static Id resolveFirstUserMember(Id groupId, Set<Id> visitedGroupIds) {
+        if (groupId == null || visitedGroupIds.contains(groupId)) {
+            return null;
+        }
+        visitedGroupIds.add(groupId);
+
+        List<GroupMember> members = [
+            SELECT UserOrGroupId
+            FROM GroupMember
+            WHERE GroupId = :groupId
+            ORDER BY UserOrGroupId
+        ];
+
+        for (GroupMember member : members) {
+            if (member.UserOrGroupId.getSObjectType() == User.SObjectType) {
+                return member.UserOrGroupId;
+            }
+        }
+        for (GroupMember member : members) {
+            if (member.UserOrGroupId.getSObjectType() == Group.SObjectType) {
+                Id nestedApproverId = resolveFirstUserMember(member.UserOrGroupId, visitedGroupIds);
+                if (nestedApproverId != null) {
+                    return nestedApproverId;
+                }
+            }
+        }
+        return null;
     }
 }

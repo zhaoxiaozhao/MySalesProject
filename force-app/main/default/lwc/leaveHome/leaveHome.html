@@ -1,6 +1,9 @@
 <template>
     <lightning-card title="Leave Management" icon-name="standard:case_wrap_up">
         <div class="slds-m-around_medium">
+            <template if:true={isLoading}>
+                <lightning-spinner size="small" alternative-text="Processing"></lightning-spinner>
+            </template>
 
             <!-- Employee: Balance -->
             <template if:true={balance}>
@@ -8,13 +11,13 @@
                     <div class="slds-col slds-size_1-of-3">
                         <div class="slds-box slds-text-align_center slds-theme_info">
                             <p class="slds-text-heading_small">Annual</p>
-                            <p class="slds-text-heading_x-large">{balance.Annual_Total_Available__c}</p>
-                            <template if:true={balance.Carryover_Annual_Leave__c}>
+                            <p class="slds-text-heading_x-large">{balance.annualTotalAvailable}</p>
+                            <template if:true={balance.carryoverAnnualLeave}>
                                 <p class="slds-text-body_small">
-                                    Carryover: {balance.Carryover_Annual_Leave__c}
+                                    Carryover: {balance.carryoverAnnualLeave}
                                 </p>
                                 <p class="slds-text-body_small">
-                                    Expires: {balance.Carryover_Expiry_Date__c}
+                                    Expires: {balance.carryoverExpiryDate}
                                 </p>
                             </template>
                         </div>
@@ -22,13 +25,13 @@
                     <div class="slds-col slds-size_1-of-3">
                         <div class="slds-box slds-text-align_center slds-theme_success">
                             <p class="slds-text-heading_small">Sick</p>
-                            <p class="slds-text-heading_x-large">{balance.Sick_Leave__c}</p>
+                            <p class="slds-text-heading_x-large">{balance.sickLeave}</p>
                         </div>
                     </div>
                     <div class="slds-col slds-size_1-of-3">
                         <div class="slds-box slds-text-align_center slds-theme_warning">
                             <p class="slds-text-heading_small">Personal</p>
-                            <p class="slds-text-heading_x-large">{balance.Personal_Leave__c}</p>
+                            <p class="slds-text-heading_x-large">{balance.personalLeave}</p>
                         </div>
                     </div>
                 </div>
@@ -39,17 +42,28 @@
             <lightning-button label="New Request" variant="brand" icon-name="utility:add"
                 onclick={newRequest} class="slds-m-bottom_small">
             </lightning-button>
-            <template if:true={myRequests}>
-                <lightning-datatable key-field="Id" data={myRequests} columns={employeeColumns}>
+            <template if:true={hasMyRequests}>
+                <lightning-datatable
+                    key-field="Id"
+                    data={myRequests}
+                    columns={employeeColumns}
+                    onrowaction={handleMyRequestRowAction}>
                 </lightning-datatable>
+            </template>
+            <template if:false={hasMyRequests}>
+                <p class="slds-text-color_weak">No leave requests yet. Create a new request to get started.</p>
             </template>
 
             <!-- Manager: Pending Approvals -->
             <template if:true={roles.isManager}>
                 <div class="slds-m-top_large">
                     <h3 class="slds-section__title">Pending Approvals</h3>
-                    <template if:true={pendingApprovals}>
-                        <lightning-datatable key-field="Id" data={pendingApprovals} columns={managerColumns}>
+                    <template if:true={hasPendingApprovals}>
+                        <lightning-datatable
+                            key-field="Id"
+                            data={pendingApprovals}
+                            columns={managerColumns}
+                            onrowaction={handleManagerRowAction}>
                         </lightning-datatable>
                     </template>
                     <template if:false={pendingApprovals}>
@@ -61,17 +75,37 @@
             <!-- HR: All Records -->
             <template if:true={roles.isHR}>
                 <div class="slds-m-top_large">
+                    <h3 class="slds-section__title">HR Pending Approvals</h3>
+                    <template if:true={hasHrPendingApprovals}>
+                        <lightning-datatable
+                            key-field="Id"
+                            data={hrPendingApprovals}
+                            columns={hrPendingColumns}
+                            onrowaction={handleHrRowAction}>
+                        </lightning-datatable>
+                    </template>
+                    <template if:false={hasHrPendingApprovals}>
+                        <p class="slds-text-color_weak">No HR approvals pending.</p>
+                    </template>
+                </div>
+                <div class="slds-m-top_large">
                     <h3 class="slds-section__title">All Leave Balances</h3>
-                    <template if:true={allBalances}>
+                    <template if:true={hasAllBalances}>
                         <lightning-datatable key-field="Id" data={allBalances} columns={balanceColumns}>
                         </lightning-datatable>
+                    </template>
+                    <template if:false={hasAllBalances}>
+                        <p class="slds-text-color_weak">No leave balances found.</p>
                     </template>
                 </div>
                 <div class="slds-m-top_large">
                     <h3 class="slds-section__title">All Leave Requests</h3>
-                    <template if:true={allRequests}>
+                    <template if:true={hasAllRequests}>
                         <lightning-datatable key-field="Id" data={allRequests} columns={hrColumns}>
                         </lightning-datatable>
+                    </template>
+                    <template if:false={hasAllRequests}>
+                        <p class="slds-text-color_weak">No leave requests found.</p>
                     </template>
                 </div>
             </template>
@@ -83,4 +117,57 @@
             </template>
         </div>
     </lightning-card>
+
+    <template if:true={isCreateModalOpen}>
+        <section role="dialog" tabindex="-1" aria-modal="true" aria-label="Create Leave Request"
+            class="slds-modal slds-fade-in-open">
+            <div class="slds-modal__container">
+                <header class="slds-modal__header">
+                    <h2 class="slds-modal__title slds-hyphenate">New Leave Request</h2>
+                </header>
+                <div class="slds-modal__content slds-p-around_medium">
+                    <lightning-combobox
+                        name="leaveTypeDefinitionId"
+                        label="Leave Type"
+                        value={newRequestForm.leaveTypeDefinitionId}
+                        options={leaveTypeOptions}
+                        onchange={handleCreateFieldChange}
+                        required>
+                    </lightning-combobox>
+                    <lightning-input
+                        class="slds-m-top_small"
+                        type="date"
+                        name="startDate"
+                        label="Start Date"
+                        value={newRequestForm.startDate}
+                        onchange={handleCreateFieldChange}
+                        required>
+                    </lightning-input>
+                    <lightning-input
+                        class="slds-m-top_small"
+                        type="date"
+                        name="endDate"
+                        label="End Date"
+                        value={newRequestForm.endDate}
+                        onchange={handleCreateFieldChange}
+                        required>
+                    </lightning-input>
+                    <lightning-textarea
+                        class="slds-m-top_small"
+                        name="reason"
+                        label="Reason"
+                        value={newRequestForm.reason}
+                        onchange={handleCreateFieldChange}>
+                    </lightning-textarea>
+                </div>
+                <footer class="slds-modal__footer">
+                    <lightning-button label="Cancel" onclick={closeCreateModal}></lightning-button>
+                    <lightning-button class="slds-m-left_small" variant="brand" label="Save Draft"
+                        onclick={saveRequest}>
+                    </lightning-button>
+                </footer>
+            </div>
+        </section>
+        <div class="slds-backdrop slds-backdrop_open"></div>
+    </template>
 </template>

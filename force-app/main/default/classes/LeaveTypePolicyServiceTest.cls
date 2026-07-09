@@ -82,13 +82,14 @@ private class LeaveTypePolicyServiceTest {
         Integer yearValue = Date.today().year();
         User employee = createEmployeeUser('policyinactive');
 
-        insert new Leave_Type_Definition__c(
+        Leave_Type_Definition__c personalDefinition = new Leave_Type_Definition__c(
             Name = 'Personal Leave Policy',
             Type_Code__c = 'PERSONAL',
             Is_Active__c = false,
             Allow_Carryover__c = false,
             Policy_Version__c = 5
         );
+        insert personalDefinition;
         insert new Leave_Balance__c(
             User__c = employee.Id,
             Year__c = yearValue,
@@ -99,7 +100,7 @@ private class LeaveTypePolicyServiceTest {
 
         Leave_Request__c requestRecord = new Leave_Request__c(
             Employee__c = employee.Id,
-            Leave_Type__c = 'Personal',
+            Leave_Type_Definition__c = personalDefinition.Id,
             Start_Date__c = Date.today().addDays(5),
             End_Date__c = Date.today().addDays(6),
             Status__c = 'Draft',
@@ -108,7 +109,7 @@ private class LeaveTypePolicyServiceTest {
         insert requestRecord;
 
         Leave_Request__c insertedRequest = [
-            SELECT Leave_Type__c, Start_Date__c, End_Date__c, Employee__c, Status__c,
+            SELECT Start_Date__c, End_Date__c, Employee__c, Status__c,
                    Leave_Type_Definition__c, Leave_Type_Code__c, Leave_Type_Name__c, Policy_Version__c
             FROM Leave_Request__c
             WHERE Id = :requestRecord.Id
@@ -134,7 +135,7 @@ private class LeaveTypePolicyServiceTest {
         Integer yearValue = Date.today().year();
         User employee = createEmployeeUser('policyroute');
 
-        insert new Leave_Type_Definition__c(
+        Leave_Type_Definition__c annualDefinition = new Leave_Type_Definition__c(
             Name = 'Annual Leave Policy',
             Type_Code__c = 'ANNUAL',
             Is_Active__c = true,
@@ -143,6 +144,7 @@ private class LeaveTypePolicyServiceTest {
             Approval_Group_Key__c = 'HR_QUEUE',
             Policy_Version__c = 7
         );
+        insert annualDefinition;
         insert new Leave_Balance__c(
             User__c = employee.Id,
             Year__c = yearValue,
@@ -153,7 +155,7 @@ private class LeaveTypePolicyServiceTest {
 
         Leave_Request__c requestRecord = new Leave_Request__c(
             Employee__c = employee.Id,
-            Leave_Type__c = 'Annual',
+            Leave_Type_Definition__c = annualDefinition.Id,
             Start_Date__c = Date.today().addDays(3),
             End_Date__c = Date.today().addDays(4),
             Status__c = 'Draft',
@@ -228,7 +230,7 @@ private class LeaveTypePolicyServiceTest {
         Integer yearValue = Date.today().year();
         User employee = createEmployeeUser('policyauto');
 
-        insert new Leave_Type_Definition__c(
+        Leave_Type_Definition__c sickDefinition = new Leave_Type_Definition__c(
             Name = 'Sick Leave Policy',
             Type_Code__c = 'SICK',
             Is_Active__c = true,
@@ -237,6 +239,7 @@ private class LeaveTypePolicyServiceTest {
             Auto_Approve_Below_Days__c = 1,
             Policy_Version__c = 2
         );
+        insert sickDefinition;
         insert new Leave_Balance__c(
             User__c = employee.Id,
             Year__c = yearValue,
@@ -247,7 +250,7 @@ private class LeaveTypePolicyServiceTest {
 
         Leave_Request__c requestRecord = new Leave_Request__c(
             Employee__c = employee.Id,
-            Leave_Type__c = 'Sick',
+            Leave_Type_Definition__c = sickDefinition.Id,
             Start_Date__c = Date.today().addDays(10),
             End_Date__c = Date.today().addDays(10),
             Status__c = 'Draft',
