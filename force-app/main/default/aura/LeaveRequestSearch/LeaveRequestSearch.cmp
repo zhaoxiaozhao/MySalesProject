@@ -1,0 +1,95 @@
+<aura:component
+    controller="LeaveRequestSearchController"
+    implements="flexipage:availableForAllPageTypes,force:appHostable"
+    access="global">
+
+    <aura:attribute name="rows" type="Object[]"/>
+    <aura:attribute name="columns" type="List"/>
+    <aura:attribute name="statusOptions" type="List"/>
+    <aura:attribute name="scopeOptions" type="List"/>
+    <aura:attribute name="keyword" type="String" default=""/>
+    <aura:attribute name="employeeKeyword" type="String" default=""/>
+    <aura:attribute name="status" type="String" default=""/>
+    <aura:attribute name="scope" type="String" default="MY"/>
+    <aura:attribute name="leaveDateFrom" type="Date"/>
+    <aura:attribute name="leaveDateTo" type="Date"/>
+    <aura:attribute name="isLoading" type="Boolean" default="false"/>
+    <aura:attribute name="errorMessage" type="String"/>
+    <aura:attribute name="resultCount" type="Integer" default="0"/>
+
+    <aura:handler name="init" value="{!this}" action="{!c.doInit}"/>
+
+    <lightning:card title="Leave Request Search" iconName="standard:calibration">
+        <div class="slds-p-around_medium">
+            <aura:if isTrue="{!not(empty(v.errorMessage))}">
+                <div class="slds-notify slds-notify_alert slds-theme_error slds-m-bottom_medium" role="alert">
+                    <span class="slds-assistive-text">Error</span>
+                    <h2>{!v.errorMessage}</h2>
+                </div>
+            </aura:if>
+
+            <lightning:layout multipleRows="true" horizontalAlign="spread">
+                <lightning:layoutItem size="12" mediumDeviceSize="3" padding="around-small">
+                    <lightning:input
+                        name="keyword"
+                        label="Keyword"
+                        value="{!v.keyword}"
+                        placeholder="Request No / Leave Type / Reason"/>
+                </lightning:layoutItem>
+                <lightning:layoutItem size="12" mediumDeviceSize="3" padding="around-small">
+                    <lightning:input
+                        name="employeeKeyword"
+                        label="Employee"
+                        value="{!v.employeeKeyword}"
+                        placeholder="Employee Name"/>
+                </lightning:layoutItem>
+                <lightning:layoutItem size="12" mediumDeviceSize="3" padding="around-small">
+                    <lightning:select name="scope" label="Scope" value="{!v.scope}">
+                        <aura:iteration items="{!v.scopeOptions}" var="option">
+                            <option value="{!option.value}">{!option.label}</option>
+                        </aura:iteration>
+                    </lightning:select>
+                </lightning:layoutItem>
+                <lightning:layoutItem size="12" mediumDeviceSize="3" padding="around-small">
+                    <lightning:select name="status" label="Status" value="{!v.status}">
+                        <aura:iteration items="{!v.statusOptions}" var="option">
+                            <option value="{!option.value}">{!option.label}</option>
+                        </aura:iteration>
+                    </lightning:select>
+                </lightning:layoutItem>
+                <lightning:layoutItem size="12" mediumDeviceSize="3" padding="around-small">
+                    <lightning:input
+                        type="date"
+                        name="leaveDateFrom"
+                        label="Leave Date From"
+                        value="{!v.leaveDateFrom}"/>
+                </lightning:layoutItem>
+                <lightning:layoutItem size="12" mediumDeviceSize="3" padding="around-small">
+                    <lightning:input
+                        type="date"
+                        name="leaveDateTo"
+                        label="Leave Date To"
+                        value="{!v.leaveDateTo}"/>
+                </lightning:layoutItem>
+                <lightning:layoutItem size="12" padding="around-small">
+                    <lightning:buttonGroup>
+                        <lightning:button variant="brand" label="Search" onclick="{!c.handleSearch}"/>
+                        <lightning:button label="Reset" onclick="{!c.handleReset}"/>
+                    </lightning:buttonGroup>
+                </lightning:layoutItem>
+            </lightning:layout>
+
+            <div class="slds-m-top_small slds-m-bottom_small slds-text-title_caps">
+                {!v.resultCount} result(s)
+            </div>
+
+            <lightning:datatable
+                keyField="requestId"
+                data="{!v.rows}"
+                columns="{!v.columns}"
+                hideCheckboxColumn="true"
+                resizeColumnDisabled="false"
+                isLoading="{!v.isLoading}"/>
+        </div>
+    </lightning:card>
+</aura:component>

@@ -1,5 +1,8 @@
 public without sharing class LeaveService {
 
+    private static final String LEAVE_HR_PERMISSION_SET = 'Leave_HR';
+    private static final String LEAVE_ADMIN_PERMISSION_SET = 'Leave_Admin';
+
     public static void submitLeave(Id leaveRequestId) {
         Leave_Request__c req = [
             SELECT Id, Employee__c, Manager__c, Start_Date__c, End_Date__c,
@@ -73,6 +76,8 @@ public without sharing class LeaveService {
             throw new IllegalArgumentException('Leave request is not in an approvable status');
         }
 
+        validateApproverAuthorization(req, approverId);
+
         req.Status__c = nextStatus;
         LeaveApprovalHistoryService.suppressTransitionHistory(true);
         try {
@@ -96,6 +101,8 @@ public without sharing class LeaveService {
         if (req.Status__c != 'Pending_Manager_Approval' && req.Status__c != 'Pending_HR_Approval') {
             throw new IllegalArgumentException('Leave request is not in a rejectable status');
         }
+
+        validateApproverAuthorization(req, approverId);
 
         String stage = req.Status__c == 'Pending_HR_Approval' ? 'HR_Approval' : 'Manager_Approval';
         req.Status__c = 'Rejected';
@@ -193,6 +200,56 @@ public without sharing class LeaveService {
             || req.Status__c == 'Submitted'
             || req.Status__c == 'Pending_Manager_Approval'
             || req.Status__c == 'Pending_HR_Approval';
+    }
+
+    private static void validateApproverAuthorization(Leave_Request__c req, Id approverId) {
+        if (approverId == null) {
+            throw new IllegalArgumentException('Approver is required for this action.');
+        }
+        if (req == null) {
+            throw new IllegalArgumentException('Leave request is required for this action.');
+        }
+
+        if (req.Status__c == 'Pending_Manager_Approval') {
+            if (approverId == req.Manager__c || hasPermissionSet(approverId, LEAVE_ADMIN_PERMISSION_SET)) {
+                return;
+            }
+            throw new IllegalArgumentException(
+                'Only the assigned manager or leave administrator can approve or reject this request.'
+            );
+        }
+
+        if (req.Status__c == 'Pending_HR_Approval') {
+            if (hasPermissionSet(approverId, LEAVE_HR_PERMISSION_SET) ||
+                hasPermissionSet(approverId, LEAVE_ADMIN_PERMISSION_SET)) {
+                return;
+            }
+
+            Id configuredApproverId = LeaveApprovalRoutingService.resolveApproverId(
+                req,
+                'HR_Approval',
+                null
+            );
+            if (configuredApproverId == approverId) {
+                return;
+            }
+
+            throw new IllegalArgumentException(
+                'Only the configured HR approver, HR team, or leave administrator can approve or reject this request.'
+            );
+        }
+    }
+
+    private static Boolean hasPermissionSet(Id assigneeId, String permissionSetName) {
+        if (assigneeId == null || String.isBlank(permissionSetName)) {
+            return false;
+        }
+        return [
+            SELECT COUNT()
+            FROM PermissionSetAssignment
+            WHERE AssigneeId = :assigneeId
+            AND PermissionSet.Name = :permissionSetName
+        ] > 0;
     }
 
     private static void recallPendingApprovalIfNeeded(Id leaveRequestId, String comments) {

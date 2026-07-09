@@ -8,6 +8,7 @@ private class LeaveServiceTest {
     static void testRejectLeaveUsesHrStageHistory() {
         User employee = createEmployeeUser('rejecthr');
         Integer yearValue = Date.today().year();
+        assignPermissionSet(UserInfo.getUserId(), 'Leave_HR');
         Leave_Type_Definition__c annualDefinition = createLeaveTypeDefinition(
             'ANNUAL',
             'Annual Leave Policy',
@@ -395,6 +396,96 @@ private class LeaveServiceTest {
     }
 
     @IsTest
+    static void testApproveLeaveRejectsUnauthorizedManagerApprover() {
+        User employee = createEmployeeUser('managerunauth');
+        User outsider = createEmployeeUser('manageroutsider');
+        Integer yearValue = Date.today().year();
+        assignPermissionSet(outsider.Id, 'Leave_Employee');
+
+        insert new Leave_Balance__c(
+            User__c = employee.Id,
+            Year__c = yearValue,
+            Annual_Leave__c = 10,
+            Sick_Leave__c = 5,
+            Personal_Leave__c = 5
+        );
+
+        Leave_Request__c requestRecord = new Leave_Request__c(
+            Employee__c = employee.Id,
+            Manager__c = UserInfo.getUserId(),
+            Leave_Type_Definition__c = createLeaveTypeDefinition('ANNUAL', 'Annual Leave Policy', true, 'Manager Only').Id,
+            Start_Date__c = Date.today().addDays(9),
+            End_Date__c = Date.today().addDays(10),
+            Status__c = 'Pending_Manager_Approval',
+            Balance_Deducted__c = false,
+            Approval_Mode_Snapshot__c = 'Manager Only',
+            Approval_Target_Snapshot__c = 'Manager'
+        );
+        insert requestRecord;
+
+        System.runAs(outsider) {
+            try {
+                LeaveService.approveLeave(requestRecord.Id, outsider.Id, 'Should fail');
+                Assert.fail('Unauthorized non-manager should not be able to approve manager stage.');
+            } catch (IllegalArgumentException ex) {
+                Assert.isTrue(ex.getMessage().contains('assigned manager'));
+            }
+        }
+
+        Leave_Request__c unchangedRequest = [
+            SELECT Status__c
+            FROM Leave_Request__c
+            WHERE Id = :requestRecord.Id
+        ];
+        Assert.areEqual('Pending_Manager_Approval', unchangedRequest.Status__c);
+    }
+
+    @IsTest
+    static void testRejectLeaveRejectsUnauthorizedHrApprover() {
+        User employee = createEmployeeUser('hrunauth');
+        User outsider = createEmployeeUser('hroutsider');
+        Integer yearValue = Date.today().year();
+        assignPermissionSet(outsider.Id, 'Leave_Employee');
+
+        insert new Leave_Balance__c(
+            User__c = employee.Id,
+            Year__c = yearValue,
+            Annual_Leave__c = 10,
+            Sick_Leave__c = 5,
+            Personal_Leave__c = 5
+        );
+
+        Leave_Request__c requestRecord = new Leave_Request__c(
+            Employee__c = employee.Id,
+            Manager__c = UserInfo.getUserId(),
+            Leave_Type_Definition__c = createLeaveTypeDefinition('ANNUAL', 'Annual Leave Policy', true, 'HR Only').Id,
+            Start_Date__c = Date.today().addDays(11),
+            End_Date__c = Date.today().addDays(12),
+            Status__c = 'Pending_HR_Approval',
+            Balance_Deducted__c = false,
+            Approval_Mode_Snapshot__c = 'HR Only',
+            Approval_Target_Snapshot__c = 'HR_QUEUE'
+        );
+        insert requestRecord;
+
+        System.runAs(outsider) {
+            try {
+                LeaveService.rejectLeave(requestRecord.Id, outsider.Id, 'Should fail');
+                Assert.fail('Unauthorized non-HR should not be able to reject HR stage.');
+            } catch (IllegalArgumentException ex) {
+                Assert.isTrue(ex.getMessage().contains('configured HR approver'));
+            }
+        }
+
+        Leave_Request__c unchangedRequest = [
+            SELECT Status__c
+            FROM Leave_Request__c
+            WHERE Id = :requestRecord.Id
+        ];
+        Assert.areEqual('Pending_HR_Approval', unchangedRequest.Status__c);
+    }
+
+    @IsTest
     static void testCancelLeaveDraftRequestWritesCancellationHistory() {
         User employee = createEmployeeUser('canceldraft');
 
@@ -715,6 +806,19 @@ private class LeaveServiceTest {
         );
         insert employee;
         return employee;
+    }
+
+    private static void assignPermissionSet(Id userId, String permissionSetName) {
+        PermissionSet permissionSetRecord = [
+            SELECT Id
+            FROM PermissionSet
+            WHERE Name = :permissionSetName
+            LIMIT 1
+        ];
+        insert new PermissionSetAssignment(
+            AssigneeId = userId,
+            PermissionSetId = permissionSetRecord.Id
+        );
     }
 
     private static Leave_Type_Definition__c createLeaveTypeDefinition(
