@@ -171,7 +171,7 @@ private class LeaveTypePolicyServiceTest {
             FROM Leave_Request__c
             WHERE Id = :requestRecord.Id
         ];
-        Assert.areEqual('Pending_Manager_Approval', submittedRequest.Status__c);
+        Assert.areEqual('Submitted', submittedRequest.Status__c);
         Assert.areEqual(UserInfo.getUserId(), submittedRequest.Manager__c);
         Assert.areEqual('Manager Then HR', submittedRequest.Approval_Mode_Snapshot__c);
         Assert.areEqual('HR_QUEUE', submittedRequest.Approval_Target_Snapshot__c);

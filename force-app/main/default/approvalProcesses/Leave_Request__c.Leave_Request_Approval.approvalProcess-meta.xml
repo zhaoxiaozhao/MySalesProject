@@ -32,7 +32,7 @@
         <criteriaItems>
             <field>Leave_Request__c.Status__c</field>
             <operation>equals</operation>
-            <value>Pending_Manager_Approval</value>
+            <value>Draft</value>
         </criteriaItems>
     </entryCriteria>
     <finalApprovalActions>
@@ -49,6 +49,12 @@
         </action>
     </finalRejectionActions>
     <finalRejectionRecordLock>false</finalRejectionRecordLock>
+    <initialSubmissionActions>
+        <action>
+            <name>Set_Status_Submitted</name>
+            <type>FieldUpdate</type>
+        </action>
+    </initialSubmissionActions>
     <label>Leave Request Approval</label>
     <nextAutomatedApprover>
         <useApproverFieldOfRecordOwner>true</useApproverFieldOfRecordOwner>

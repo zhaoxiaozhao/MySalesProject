@@ -31,13 +31,13 @@ public without sharing class LeaveApprovalHistoryService {
                 }
             }
 
-            if (oldRecord.Status__c == 'Pending_Manager_Approval' && requestRecord.Status__c == 'Pending_HR_Approval') {
+            if (isManagerPendingStatus(oldRecord.Status__c) && requestRecord.Status__c == 'Pending_HR_Approval') {
                 historiesToInsert.add(buildHistory(requestRecord, 'Manager_Approval', 'Approved', null));
-            } else if (oldRecord.Status__c == 'Pending_Manager_Approval' && requestRecord.Status__c == 'Approved') {
+            } else if (isManagerPendingStatus(oldRecord.Status__c) && requestRecord.Status__c == 'Approved') {
                 historiesToInsert.add(buildHistory(requestRecord, 'Manager_Approval', 'Approved', null));
             } else if (oldRecord.Status__c == 'Pending_HR_Approval' && requestRecord.Status__c == 'Approved') {
                 historiesToInsert.add(buildHistory(requestRecord, 'HR_Approval', 'Approved', null));
-            } else if (oldRecord.Status__c == 'Pending_Manager_Approval' && requestRecord.Status__c == 'Rejected') {
+            } else if (isManagerPendingStatus(oldRecord.Status__c) && requestRecord.Status__c == 'Rejected') {
                 historiesToInsert.add(buildHistory(requestRecord, 'Manager_Approval', 'Rejected', null));
             } else if (oldRecord.Status__c == 'Pending_HR_Approval' && requestRecord.Status__c == 'Rejected') {
                 historiesToInsert.add(buildHistory(requestRecord, 'HR_Approval', 'Rejected', null));
@@ -71,5 +71,9 @@ public without sharing class LeaveApprovalHistoryService {
         return oldRecord.Status__c == 'Draft'
             && requestRecord.Status__c != 'Draft'
             && requestRecord.Status__c != null;
+    }
+
+    private static Boolean isManagerPendingStatus(String statusValue) {
+        return statusValue == 'Submitted' || statusValue == 'Pending_Manager_Approval';
     }
 }

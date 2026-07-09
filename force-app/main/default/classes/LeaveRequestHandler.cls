@@ -61,7 +61,8 @@ public without sharing class LeaveRequestHandler {
                 req.Manager__c = userMap.get(req.Employee__c).ManagerId;
             }
 
-            if (old.Status__c == 'Pending_Manager_Approval' && req.Status__c == 'Approved') {
+            if ((old.Status__c == 'Pending_Manager_Approval' || old.Status__c == 'Submitted')
+                && req.Status__c == 'Approved') {
                 req.Status__c = LeaveApprovalRoutingService.resolveManagerApprovalStatus(req);
             }
 

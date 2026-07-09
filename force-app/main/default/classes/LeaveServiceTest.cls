@@ -117,7 +117,7 @@ private class LeaveServiceTest {
             WHERE TargetObjectId = :requestRecord.Id
         ];
 
-        Assert.areEqual('Pending_Manager_Approval', submittedRequest.Status__c);
+        Assert.areEqual('Submitted', submittedRequest.Status__c);
         Assert.areEqual(UserInfo.getUserId(), submittedRequest.Manager__c);
         Assert.isNotNull(submittedRequest.Submitted_Time__c);
         Assert.areEqual('Manager Then HR', submittedRequest.Approval_Mode_Snapshot__c);
@@ -349,17 +349,17 @@ private class LeaveServiceTest {
         );
 
         Leave_Request__c requestRecord = new Leave_Request__c(
+            OwnerId = employee.Id,
             Employee__c = employee.Id,
-            Manager__c = UserInfo.getUserId(),
             Leave_Type_Definition__c = annualDefinition.Id,
             Start_Date__c = Date.today().addDays(7),
             End_Date__c = Date.today().addDays(8),
-            Status__c = 'Pending_Manager_Approval',
-            Balance_Deducted__c = false,
-            Approval_Mode_Snapshot__c = 'Manager Then HR',
-            Approval_Target_Snapshot__c = 'HR_QUEUE'
+            Status__c = 'Draft',
+            Balance_Deducted__c = false
         );
         insert requestRecord;
+
+        LeaveService.submitLeave(requestRecord.Id);
 
         Test.startTest();
         LeaveService.approveLeave(requestRecord.Id, UserInfo.getUserId(), 'Approved by manager');
@@ -411,17 +411,16 @@ private class LeaveServiceTest {
         );
 
         Leave_Request__c requestRecord = new Leave_Request__c(
+            OwnerId = employee.Id,
             Employee__c = employee.Id,
-            Manager__c = UserInfo.getUserId(),
             Leave_Type_Definition__c = createLeaveTypeDefinition('ANNUAL', 'Annual Leave Policy', true, 'Manager Only').Id,
             Start_Date__c = Date.today().addDays(9),
             End_Date__c = Date.today().addDays(10),
-            Status__c = 'Pending_Manager_Approval',
-            Balance_Deducted__c = false,
-            Approval_Mode_Snapshot__c = 'Manager Only',
-            Approval_Target_Snapshot__c = 'Manager'
+            Status__c = 'Draft',
+            Balance_Deducted__c = false
         );
         insert requestRecord;
+        LeaveService.submitLeave(requestRecord.Id);
 
         System.runAs(outsider) {
             try {
@@ -437,7 +436,7 @@ private class LeaveServiceTest {
             FROM Leave_Request__c
             WHERE Id = :requestRecord.Id
         ];
-        Assert.areEqual('Pending_Manager_Approval', unchangedRequest.Status__c);
+        Assert.areEqual('Submitted', unchangedRequest.Status__c);
     }
 
     @IsTest

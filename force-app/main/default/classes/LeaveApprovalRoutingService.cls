@@ -35,7 +35,7 @@ public without sharing class LeaveApprovalRoutingService {
 
         if (approvalMode == 'Manager Then HR') {
             validateManagerAvailability(managerId);
-            decision.nextStatus = 'Pending_Manager_Approval';
+            decision.nextStatus = 'Submitted';
             decision.approvalModeSnapshot = 'Manager Then HR';
             decision.approvalTargetSnapshot = getHrTarget(policy);
             return decision;
@@ -54,7 +54,7 @@ public without sharing class LeaveApprovalRoutingService {
 
             if (policy.requiresHrApproval) {
                 validateManagerAvailability(managerId);
-                decision.nextStatus = 'Pending_Manager_Approval';
+                decision.nextStatus = 'Submitted';
                 decision.approvalModeSnapshot = 'Manager Then HR';
                 decision.approvalTargetSnapshot = getHrTarget(policy);
                 return decision;
@@ -62,7 +62,7 @@ public without sharing class LeaveApprovalRoutingService {
         }
 
         validateManagerAvailability(managerId);
-        decision.nextStatus = 'Pending_Manager_Approval';
+        decision.nextStatus = 'Submitted';
         decision.approvalModeSnapshot = 'Manager Only';
         decision.approvalTargetSnapshot = 'Manager';
         return decision;
@@ -83,7 +83,7 @@ public without sharing class LeaveApprovalRoutingService {
             return requestRecord.Manager__c;
         }
         if (stage == 'Submit' && action == 'Submitted' &&
-            requestRecord.Status__c == 'Pending_Manager_Approval') {
+            isManagerPendingStatus(requestRecord.Status__c)) {
             return requestRecord.Manager__c;
         }
         if (stage == 'HR_Approval') {
@@ -110,7 +110,7 @@ public without sharing class LeaveApprovalRoutingService {
                 : requestRecord.Approval_Target_Snapshot__c;
         }
         if (stage == 'Submit' && action == 'Submitted') {
-            if (requestRecord.Status__c == 'Pending_Manager_Approval') {
+            if (isManagerPendingStatus(requestRecord.Status__c)) {
                 return 'Manager';
             }
             if (requestRecord.Status__c == 'Pending_HR_Approval') {
@@ -135,6 +135,10 @@ public without sharing class LeaveApprovalRoutingService {
             return 'Manager Only';
         }
         return policy.approvalMode;
+    }
+
+    private static Boolean isManagerPendingStatus(String statusValue) {
+        return statusValue == 'Submitted' || statusValue == 'Pending_Manager_Approval';
     }
 
     private static void validateManagerAvailability(Id managerId) {

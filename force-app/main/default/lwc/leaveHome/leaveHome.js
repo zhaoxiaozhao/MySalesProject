@@ -355,12 +355,15 @@ export default class LeaveHome extends LightningElement {
     }
 
     mapApprovalRequest(requestRow, actionableStatus) {
+        const actionableStatuses = actionableStatus === 'Pending_Manager_Approval'
+            ? ['Submitted', 'Pending_Manager_Approval']
+            : [actionableStatus];
         return {
             ...requestRow,
             EmployeeName: requestRow.Employee__r ? requestRow.Employee__r.Name : '',
             detailUrl: '/lightning/r/Leave_Request__c/' + requestRow.Id + '/view',
-            approveDisabled: requestRow.Status__c !== actionableStatus,
-            rejectDisabled: requestRow.Status__c !== actionableStatus,
+            approveDisabled: !actionableStatuses.includes(requestRow.Status__c),
+            rejectDisabled: !actionableStatuses.includes(requestRow.Status__c),
         };
     }
 

@@ -2,8 +2,10 @@ public without sharing class LeaveService {
 
     private static final String LEAVE_HR_PERMISSION_SET = 'Leave_HR';
     private static final String LEAVE_ADMIN_PERMISSION_SET = 'Leave_Admin';
+    private static final String MANAGER_APPROVAL_PROCESS_NAME = 'Leave_Request_Approval';
 
     public static void submitLeave(Id leaveRequestId) {
+        Savepoint savepointToken = Database.setSavepoint();
         Leave_Request__c req = [
             SELECT Id, Employee__c, Manager__c, Start_Date__c, End_Date__c,
                    Days__c, Leave_Type_Code__c, Status__c, Approval_Mode_Snapshot__c,
@@ -15,44 +17,27 @@ public without sharing class LeaveService {
         User emp = [SELECT Id, ManagerId FROM User WHERE Id = :req.Employee__c];
 
         req.Manager__c = emp.ManagerId;
-        req.Status__c = 'Pending_Manager_Approval';
+        req.Status__c = 'Submitted';
         req.Submitted_Time__c = System.now();
-        LeaveApprovalHistoryService.suppressTransitionHistory(true);
         try {
             update req;
-        } finally {
-            LeaveApprovalHistoryService.suppressTransitionHistory(false);
-        }
+            Leave_Request__c submittedRequest = [
+                SELECT Id, Status__c
+                FROM Leave_Request__c
+                WHERE Id = :req.Id
+            ];
 
-        Leave_Request__c submittedRequest = [
-            SELECT Id, Status__c, Manager__c, Approval_Mode_Snapshot__c,
-                   Approval_Target_Snapshot__c, Balance_Deducted__c
-            FROM Leave_Request__c
-            WHERE Id = :req.Id
-        ];
-
-        List<Leave_Approval_History__c> historiesToInsert = new List<Leave_Approval_History__c>();
-        historiesToInsert.add(
-            LeaveApprovalHistoryService.buildHistory(submittedRequest, 'Submit', 'Submitted', null)
-        );
-        if (submittedRequest.Status__c == 'Approved' &&
-            submittedRequest.Approval_Mode_Snapshot__c == 'Auto Approve') {
-            historiesToInsert.add(
-                LeaveApprovalHistoryService.buildHistory(
-                    submittedRequest,
-                    'Submit',
-                    'Approved',
-                    'Auto approved by policy.'
-                )
-            );
-        }
-        insert historiesToInsert;
-
-        if (submittedRequest.Status__c == 'Pending_Manager_Approval') {
-            Approval.ProcessSubmitRequest submitReq = new Approval.ProcessSubmitRequest();
-            submitReq.setObjectId(req.Id);
-            submitReq.setSubmitterId(UserInfo.getUserId());
-            Approval.process(submitReq);
+            if (submittedRequest.Status__c == 'Submitted') {
+                Approval.ProcessSubmitRequest submitReq = new Approval.ProcessSubmitRequest();
+                submitReq.setObjectId(req.Id);
+                submitReq.setSubmitterId(UserInfo.getUserId());
+                submitReq.setProcessDefinitionNameOrId(MANAGER_APPROVAL_PROCESS_NAME);
+                submitReq.setSkipEntryCriteria(true);
+                Approval.process(submitReq);
+            }
+        } catch (Exception ex) {
+            Database.rollback(savepointToken);
+            throw ex;
         }
     }
 
@@ -66,6 +51,18 @@ public without sharing class LeaveService {
 
         String nextStatus;
         String stage;
+        if (req.Status__c == 'Submitted') {
+            validateApproverAuthorization(req, approverId);
+            LeaveApprovalHistoryService.suppressTransitionHistory(true);
+            try {
+                processPendingManagerApproval(req.Id, 'Approve', comments);
+            } finally {
+                LeaveApprovalHistoryService.suppressTransitionHistory(false);
+            }
+            insertManagerApprovalHistory(req.Id, approverId, 'Approved', comments);
+            return;
+        }
+
         if (req.Status__c == 'Pending_Manager_Approval') {
             nextStatus = 'Approved';
             stage = 'Manager_Approval';
@@ -97,6 +94,18 @@ public without sharing class LeaveService {
             FROM Leave_Request__c
             WHERE Id = :leaveRequestId
         ];
+
+        if (req.Status__c == 'Submitted') {
+            validateApproverAuthorization(req, approverId);
+            LeaveApprovalHistoryService.suppressTransitionHistory(true);
+            try {
+                processPendingManagerApproval(req.Id, 'Reject', comments);
+            } finally {
+                LeaveApprovalHistoryService.suppressTransitionHistory(false);
+            }
+            insertManagerApprovalHistory(req.Id, approverId, 'Rejected', comments);
+            return;
+        }
 
         if (req.Status__c != 'Pending_Manager_Approval' && req.Status__c != 'Pending_HR_Approval') {
             throw new IllegalArgumentException('Leave request is not in a rejectable status');
@@ -210,7 +219,7 @@ public without sharing class LeaveService {
             throw new IllegalArgumentException('Leave request is required for this action.');
         }
 
-        if (req.Status__c == 'Pending_Manager_Approval') {
+        if (req.Status__c == 'Submitted' || req.Status__c == 'Pending_Manager_Approval') {
             if (approverId == req.Manager__c || hasPermissionSet(approverId, LEAVE_ADMIN_PERMISSION_SET)) {
                 return;
             }
@@ -252,7 +261,45 @@ public without sharing class LeaveService {
         ] > 0;
     }
 
-    private static void recallPendingApprovalIfNeeded(Id leaveRequestId, String comments) {
+    private static void processPendingManagerApproval(Id leaveRequestId, String actionName, String comments) {
+        Id workItemId = findPendingWorkItemId(leaveRequestId);
+        if (workItemId == null) {
+            throw new IllegalArgumentException(
+                'No pending manager approval work item was found for this leave request.'
+            );
+        }
+
+        Approval.ProcessWorkitemRequest workItemRequest = new Approval.ProcessWorkitemRequest();
+        workItemRequest.setWorkitemId(workItemId);
+        workItemRequest.setAction(actionName);
+        if (!String.isBlank(comments)) {
+            workItemRequest.setComments(comments);
+        }
+        Approval.process(workItemRequest);
+    }
+
+    private static void insertManagerApprovalHistory(
+        Id leaveRequestId,
+        Id approverId,
+        String actionName,
+        String comments
+    ) {
+        Leave_Request__c updatedRequest = [
+            SELECT Id, Status__c, Manager__c, Approval_Mode_Snapshot__c, Approval_Target_Snapshot__c
+            FROM Leave_Request__c
+            WHERE Id = :leaveRequestId
+        ];
+        Leave_Approval_History__c history = LeaveApprovalHistoryService.buildHistory(
+            updatedRequest,
+            'Manager_Approval',
+            actionName,
+            comments
+        );
+        history.Approver__c = approverId;
+        insert history;
+    }
+
+    private static Id findPendingWorkItemId(Id leaveRequestId) {
         List<ProcessInstanceWorkitem> workItems = [
             SELECT Id
             FROM ProcessInstanceWorkitem
@@ -261,12 +308,17 @@ public without sharing class LeaveService {
             ORDER BY CreatedDate DESC
             LIMIT 1
         ];
-        if (workItems.isEmpty()) {
+        return workItems.isEmpty() ? null : workItems[0].Id;
+    }
+
+    private static void recallPendingApprovalIfNeeded(Id leaveRequestId, String comments) {
+        Id workItemId = findPendingWorkItemId(leaveRequestId);
+        if (workItemId == null) {
             return;
         }
 
         Approval.ProcessWorkitemRequest recallRequest = new Approval.ProcessWorkitemRequest();
-        recallRequest.setWorkitemId(workItems[0].Id);
+        recallRequest.setWorkitemId(workItemId);
         recallRequest.setAction('Removed');
         if (!String.isBlank(comments)) {
             recallRequest.setComments(comments);
