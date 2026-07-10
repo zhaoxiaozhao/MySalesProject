@@ -42,12 +42,7 @@ public without sharing class LeaveService {
     }
 
     public static void approveLeave(Id leaveRequestId, Id approverId, String comments) {
-        Leave_Request__c req = [
-            SELECT Id, Status__c, Leave_Type_Code__c, Days__c, Manager__c,
-                   Approval_Mode_Snapshot__c, Approval_Target_Snapshot__c
-            FROM Leave_Request__c
-            WHERE Id = :leaveRequestId
-        ];
+        Leave_Request__c req = loadApprovalRequest(leaveRequestId);
 
         String nextStatus;
         String stage;
@@ -74,6 +69,7 @@ public without sharing class LeaveService {
         }
 
         validateApproverAuthorization(req, approverId);
+        applyApprovalSnapshots(req);
 
         req.Status__c = nextStatus;
         LeaveApprovalHistoryService.suppressTransitionHistory(true);
@@ -89,11 +85,7 @@ public without sharing class LeaveService {
     }
 
     public static void rejectLeave(Id leaveRequestId, Id approverId, String comments) {
-        Leave_Request__c req = [
-            SELECT Id, Status__c, Manager__c, Approval_Mode_Snapshot__c, Approval_Target_Snapshot__c
-            FROM Leave_Request__c
-            WHERE Id = :leaveRequestId
-        ];
+        Leave_Request__c req = loadApprovalRequest(leaveRequestId);
 
         if (req.Status__c == 'Submitted') {
             validateApproverAuthorization(req, approverId);
@@ -112,6 +104,7 @@ public without sharing class LeaveService {
         }
 
         validateApproverAuthorization(req, approverId);
+        applyApprovalSnapshots(req);
 
         String stage = req.Status__c == 'Pending_HR_Approval' ? 'HR_Approval' : 'Manager_Approval';
         req.Status__c = 'Rejected';
@@ -129,17 +122,20 @@ public without sharing class LeaveService {
 
     public static void cancelLeave(Id leaveRequestId, Id actorId, String comments) {
         Leave_Request__c req = [
-            SELECT Id, Employee__c, Status__c, Balance_Deducted__c,
+            SELECT Id, Employee__c, Status__c, Balance_Deducted__c, Start_Date__c, End_Date__c,
                    Approval_Mode_Snapshot__c, Approval_Target_Snapshot__c
             FROM Leave_Request__c
             WHERE Id = :leaveRequestId
         ];
 
+        if (req.Status__c == 'Approved'
+            && (req.Start_Date__c == null || req.Start_Date__c <= System.today())) {
+            throw new IllegalArgumentException(
+                'Approved leave can only be cancelled before the leave start date.'
+            );
+        }
         if (!canCancel(req)) {
             throw new IllegalArgumentException('Leave request is not in a cancellable status');
-        }
-        if (req.Balance_Deducted__c) {
-            throw new IllegalArgumentException('Approved leave with deducted balance cannot be cancelled here');
         }
 
         recallPendingApprovalIfNeeded(req.Id, comments);
@@ -205,6 +201,12 @@ public without sharing class LeaveService {
     }
 
     private static Boolean canCancel(Leave_Request__c req) {
+        if (req == null) {
+            return false;
+        }
+        if (req.Status__c == 'Approved') {
+            return req.Start_Date__c != null && req.Start_Date__c > System.today();
+        }
         return req.Status__c == 'Draft'
             || req.Status__c == 'Submitted'
             || req.Status__c == 'Pending_Manager_Approval'
@@ -220,7 +222,8 @@ public without sharing class LeaveService {
         }
 
         if (req.Status__c == 'Submitted' || req.Status__c == 'Pending_Manager_Approval') {
-            if (approverId == req.Manager__c || hasPermissionSet(approverId, LEAVE_ADMIN_PERMISSION_SET)) {
+            if (approverId == getAssignedManagerId(req) ||
+                hasPermissionSet(approverId, LEAVE_ADMIN_PERMISSION_SET)) {
                 return;
             }
             throw new IllegalArgumentException(
@@ -229,6 +232,7 @@ public without sharing class LeaveService {
         }
 
         if (req.Status__c == 'Pending_HR_Approval') {
+            applyApprovalSnapshots(req);
             if (hasPermissionSet(approverId, LEAVE_HR_PERMISSION_SET) ||
                 hasPermissionSet(approverId, LEAVE_ADMIN_PERMISSION_SET)) {
                 return;
@@ -247,6 +251,38 @@ public without sharing class LeaveService {
                 'Only the configured HR approver, HR team, or leave administrator can approve or reject this request.'
             );
         }
+    }
+
+    private static Id getAssignedManagerId(Leave_Request__c req) {
+        if (req == null) {
+            return null;
+        }
+
+        Id managerId = toId(getQueriedFieldValue(req, 'Manager__c'));
+        if (managerId == null) {
+            managerId = queryLeaveRequestIdValue(req.Id, 'Manager__c');
+        }
+        if (managerId != null) {
+            return managerId;
+        }
+
+        Id employeeId = toId(getQueriedFieldValue(req, 'Employee__c'));
+        if (employeeId == null) {
+            employeeId = queryLeaveRequestIdValue(req.Id, 'Employee__c');
+        }
+        if (employeeId != null) {
+            List<User> employees = [
+                SELECT ManagerId
+                FROM User
+                WHERE Id = :employeeId
+                LIMIT 1
+            ];
+            if (!employees.isEmpty()) {
+                return employees[0].ManagerId;
+            }
+        }
+
+        return findPendingApproverId(req.Id);
     }
 
     private static Boolean hasPermissionSet(Id assigneeId, String permissionSetName) {
@@ -284,18 +320,19 @@ public without sharing class LeaveService {
         String actionName,
         String comments
     ) {
-        Leave_Request__c updatedRequest = [
-            SELECT Id, Status__c, Manager__c, Approval_Mode_Snapshot__c, Approval_Target_Snapshot__c
-            FROM Leave_Request__c
-            WHERE Id = :leaveRequestId
-        ];
-        Leave_Approval_History__c history = LeaveApprovalHistoryService.buildHistory(
-            updatedRequest,
-            'Manager_Approval',
-            actionName,
-            comments
+        Leave_Approval_History__c history = new Leave_Approval_History__c(
+            Leave_Request__c = leaveRequestId,
+            Approver__c = approverId,
+            Approver_Target__c = 'Manager',
+            Approval_Mode_Snapshot__c = queryLeaveRequestStringValue(
+                leaveRequestId,
+                'Approval_Mode_Snapshot__c'
+            ),
+            Stage__c = 'Manager_Approval',
+            Action__c = actionName,
+            Comments__c = comments,
+            Action_Time__c = System.now()
         );
-        history.Approver__c = approverId;
         insert history;
     }
 
@@ -309,6 +346,111 @@ public without sharing class LeaveService {
             LIMIT 1
         ];
         return workItems.isEmpty() ? null : workItems[0].Id;
+    }
+
+    private static Leave_Request__c loadApprovalRequest(Id leaveRequestId) {
+        List<String> selectFields = new List<String>{
+            'Id',
+            'Status__c'
+        };
+
+        String soql =
+            'SELECT ' + String.join(selectFields, ', ') +
+            ' FROM Leave_Request__c WHERE Id = :leaveRequestId';
+        List<Leave_Request__c> requests = Database.query(soql);
+        if (requests.isEmpty()) {
+            throw new IllegalArgumentException('Leave request was not found.');
+        }
+        return requests[0];
+    }
+
+    private static void applyApprovalSnapshots(Leave_Request__c req) {
+        if (req == null || req.Id == null) {
+            return;
+        }
+
+        String approvalModeSnapshot = queryLeaveRequestStringValue(req.Id, 'Approval_Mode_Snapshot__c');
+        if (hasLeaveRequestField('Approval_Mode_Snapshot__c')) {
+            req.put('Approval_Mode_Snapshot__c', approvalModeSnapshot);
+        }
+
+        String approvalTargetSnapshot = queryLeaveRequestStringValue(req.Id, 'Approval_Target_Snapshot__c');
+        if (hasLeaveRequestField('Approval_Target_Snapshot__c')) {
+            req.put('Approval_Target_Snapshot__c', approvalTargetSnapshot);
+        }
+    }
+
+    private static Boolean hasLeaveRequestField(String fieldApiName) {
+        return !String.isBlank(fieldApiName) &&
+            Leave_Request__c.SObjectType.getDescribe().fields.getMap().containsKey(fieldApiName);
+    }
+
+    private static Object getQueriedFieldValue(SObject record, String fieldApiName) {
+        if (record == null || !hasLeaveRequestField(fieldApiName)) {
+            return null;
+        }
+        Map<String, Object> populatedFields = record.getPopulatedFieldsAsMap();
+        return populatedFields.containsKey(fieldApiName)
+            ? populatedFields.get(fieldApiName)
+            : null;
+    }
+
+    private static Id toId(Object value) {
+        if (value == null) {
+            return null;
+        }
+        return (Id)value;
+    }
+
+    private static String queryLeaveRequestStringValue(Id leaveRequestId, String fieldApiName) {
+        if (leaveRequestId == null || !hasLeaveRequestField(fieldApiName)) {
+            return null;
+        }
+
+        try {
+            String soql =
+                'SELECT ' + fieldApiName +
+                ' FROM Leave_Request__c WHERE Id = :leaveRequestId';
+            List<SObject> records = Database.query(soql);
+            if (records.isEmpty()) {
+                return null;
+            }
+            Object value = getQueriedFieldValue(records[0], fieldApiName);
+            return value == null ? null : String.valueOf(value);
+        } catch (QueryException ex) {
+            return null;
+        }
+    }
+
+    private static Id queryLeaveRequestIdValue(Id leaveRequestId, String fieldApiName) {
+        if (leaveRequestId == null || !hasLeaveRequestField(fieldApiName)) {
+            return null;
+        }
+
+        try {
+            String soql =
+                'SELECT ' + fieldApiName +
+                ' FROM Leave_Request__c WHERE Id = :leaveRequestId';
+            List<SObject> records = Database.query(soql);
+            if (records.isEmpty()) {
+                return null;
+            }
+            return toId(getQueriedFieldValue(records[0], fieldApiName));
+        } catch (QueryException ex) {
+            return null;
+        }
+    }
+
+    private static Id findPendingApproverId(Id leaveRequestId) {
+        List<ProcessInstanceWorkitem> workItems = [
+            SELECT ActorId
+            FROM ProcessInstanceWorkitem
+            WHERE ProcessInstance.TargetObjectId = :leaveRequestId
+            AND ProcessInstance.Status = 'Pending'
+            ORDER BY CreatedDate DESC
+            LIMIT 1
+        ];
+        return workItems.isEmpty() ? null : workItems[0].ActorId;
     }
 
     private static void recallPendingApprovalIfNeeded(Id leaveRequestId, String comments) {

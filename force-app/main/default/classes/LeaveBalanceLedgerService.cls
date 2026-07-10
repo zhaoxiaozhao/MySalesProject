@@ -259,6 +259,71 @@ public without sharing class LeaveBalanceLedgerService {
         );
     }
 
+    public static void reverseConsumedBalance(Id leaveRequestId, String comments) {
+        RequestContext context = loadRequestContext(leaveRequestId);
+        if (context.segments.isEmpty()) {
+            return;
+        }
+
+        List<Leave_Balance_Line__c> linesToUpdate = new List<Leave_Balance_Line__c>();
+        List<Leave_Request_Segment__c> segmentsToUpdate = new List<Leave_Request_Segment__c>();
+        List<Leave_Balance_Transaction__c> transactionsToInsert = new List<Leave_Balance_Transaction__c>();
+        Set<Id> touchedBalanceIds = new Set<Id>();
+        Set<String> reverseKeys = new Set<String>();
+        for (Leave_Request_Segment__c segmentRecord : context.segments) {
+            reverseKeys.add(buildIdempotencyKey('REVERSE_CONSUME', leaveRequestId, segmentRecord.Unique_Key__c));
+        }
+        Set<String> existingReverseKeys = queryExistingTransactionKeys(reverseKeys, null);
+
+        for (Leave_Request_Segment__c segmentRecord : context.segments) {
+            String reverseKey = buildIdempotencyKey('REVERSE_CONSUME', leaveRequestId, segmentRecord.Unique_Key__c);
+            Boolean hasExistingReverse = existingReverseKeys.contains(reverseKey);
+            Boolean shouldReverseCancelledRequest =
+                context.requestRecord.Status__c == 'Cancelled' &&
+                context.requestRecord.Balance_Deducted__c == true &&
+                !hasExistingReverse;
+            Boolean shouldReverseConsumedSegment =
+                segmentRecord.Segment_Status__c == 'Consumed' &&
+                !hasExistingReverse;
+            if (!shouldReverseConsumedSegment && !shouldReverseCancelledRequest) {
+                continue;
+            }
+
+            Leave_Balance_Line__c lineRecord =
+                context.lineByYear.get(Integer.valueOf(String.valueOf(segmentRecord.Balance_Year__c)));
+            if (lineRecord == null) {
+                continue;
+            }
+
+            lineRecord.Used__c = Math.max(
+                0,
+                safeDecimal(lineRecord.Used__c) - safeDecimal(segmentRecord.Days__c)
+            );
+            segmentRecord.Segment_Status__c = 'Released';
+            transactionsToInsert.add(buildTransaction(
+                lineRecord.Id,
+                leaveRequestId,
+                'Reverse_Consume',
+                segmentRecord.Days__c,
+                segmentRecord.Segment_Start_Date__c,
+                reverseKey,
+                String.isBlank(comments)
+                    ? 'Reversed consumed balance from leave request segment ' + segmentRecord.Unique_Key__c
+                    : comments,
+                context.policy.policyVersion
+            ));
+            linesToUpdate.add(lineRecord);
+            segmentsToUpdate.add(segmentRecord);
+            touchedBalanceIds.add(lineRecord.Leave_Balance__c);
+        }
+
+        persistLedgerChanges(linesToUpdate, segmentsToUpdate, transactionsToInsert, touchedBalanceIds);
+        update new Leave_Request__c(
+            Id = leaveRequestId,
+            Balance_Deducted__c = false
+        );
+    }
+
     public static void carryForwardAnnualLeave(
         Integer sourceYear,
         Integer targetYear,
@@ -492,7 +557,8 @@ public without sharing class LeaveBalanceLedgerService {
 
         Map<Id, List<Leave_Balance_Line__c>> linesByBalanceId = new Map<Id, List<Leave_Balance_Line__c>>();
         for (Leave_Balance_Line__c lineRecord : [
-            SELECT Id, Leave_Balance__c, Available__c, Carried_Forward__c, Reserved__c, Used__c, Expired__c,
+            SELECT Id, Leave_Balance__c, Available__c, Opening_Balance__c, Granted__c, Granted_By_Policy__c,
+                   Carried_Forward__c, Reserved__c, Used__c, Adjusted__c, Expired__c,
                    Leave_Balance__r.Year__c, Leave_Balance__r.Balance_Year__c,
                    Leave_Type_Definition__r.Type_Code__c, Leave_Type_Definition__r.Carryover_Expire_Month__c,
                    Leave_Type_Definition__r.Carryover_Expire_Day__c, Leave_Type_Definition__r.Allow_Carryover__c
@@ -516,6 +582,7 @@ public without sharing class LeaveBalanceLedgerService {
                 : new List<Leave_Balance_Line__c>();
 
             for (Leave_Balance_Line__c lineRecord : balanceLines) {
+                Decimal lineAvailable = calculateLineAvailableFromComponents(lineRecord);
                 String typeCode = lineRecord.Leave_Type_Definition__r == null
                     ? null
                     : lineRecord.Leave_Type_Definition__r.Type_Code__c;
@@ -527,15 +594,15 @@ public without sharing class LeaveBalanceLedgerService {
                         annualPolicy,
                         System.today()
                     );
-                    annualAvailable = Math.max(safeDecimal(lineRecord.Available__c) - annualCarryover, 0);
+                    annualAvailable = Math.max(lineAvailable - annualCarryover, 0);
                     annualExpiryDate = resolveCarryoverExpiryDate(
                         annualPolicy,
                         resolveBalanceYear(balanceRecord.Balance_Year__c, balanceRecord.Year__c)
                     );
                 } else if (typeCode == 'SICK') {
-                    sickAvailable = safeDecimal(lineRecord.Available__c);
+                    sickAvailable = lineAvailable;
                 } else if (typeCode == 'PERSONAL') {
-                    personalAvailable = safeDecimal(lineRecord.Available__c);
+                    personalAvailable = lineAvailable;
                 }
             }
 
@@ -837,6 +904,7 @@ public without sharing class LeaveBalanceLedgerService {
         Boolean autoCreateHeads
     ) {
         Map<Integer, Leave_Balance__c> balanceByYear = new Map<Integer, Leave_Balance__c>();
+        List<Leave_Balance__c> balancesMissingKey = new List<Leave_Balance__c>();
         Set<String> balanceKeys = new Set<String>();
         for (Integer yearValue : yearValues) {
             balanceKeys.add(buildBalanceKey(employeeId, yearValue));
@@ -849,6 +917,45 @@ public without sharing class LeaveBalanceLedgerService {
             WHERE Unique_Key__c IN :balanceKeys
         ]) {
             balanceByYear.put(resolveBalanceYear(balanceRecord.Balance_Year__c, balanceRecord.Year__c), balanceRecord);
+        }
+
+        Set<Integer> missingYears = new Set<Integer>();
+        for (Integer yearValue : yearValues) {
+            if (!balanceByYear.containsKey(yearValue)) {
+                missingYears.add(yearValue);
+            }
+        }
+        if (!missingYears.isEmpty()) {
+            for (Leave_Balance__c balanceRecord : [
+                SELECT Id, User__c, Year__c, Balance_Year__c, Unique_Key__c, Status__c,
+                       Annual_Leave__c, Sick_Leave__c, Personal_Leave__c, Carryover_Annual_Leave__c
+                FROM Leave_Balance__c
+                WHERE User__c = :employeeId
+                AND (
+                    Balance_Year__c IN :missingYears
+                    OR Year__c IN :missingYears
+                )
+            ]) {
+                Integer resolvedYear = resolveBalanceYear(
+                    balanceRecord.Balance_Year__c,
+                    balanceRecord.Year__c
+                );
+                balanceByYear.put(resolvedYear, balanceRecord);
+                if (String.isBlank(balanceRecord.Unique_Key__c)) {
+                    balanceRecord.Unique_Key__c = buildBalanceKey(employeeId, resolvedYear);
+                    if (String.isBlank(balanceRecord.Status__c)) {
+                        balanceRecord.Status__c = 'Open';
+                    }
+                    if (balanceRecord.Balance_Year__c == null) {
+                        balanceRecord.Balance_Year__c = resolvedYear;
+                    }
+                    balancesMissingKey.add(balanceRecord);
+                }
+            }
+        }
+
+        if (!balancesMissingKey.isEmpty()) {
+            update balancesMissingKey;
         }
 
         if (autoCreateHeads == true) {
@@ -1209,6 +1316,20 @@ public without sharing class LeaveBalanceLedgerService {
 
     private static Decimal safeDecimal(Decimal value) {
         return value == null ? 0 : value;
+    }
+
+    private static Decimal calculateLineAvailableFromComponents(Leave_Balance_Line__c lineRecord) {
+        if (lineRecord == null) {
+            return 0;
+        }
+        return safeDecimal(lineRecord.Opening_Balance__c)
+            + safeDecimal(lineRecord.Granted__c)
+            + safeDecimal(lineRecord.Granted_By_Policy__c)
+            + safeDecimal(lineRecord.Carried_Forward__c)
+            + safeDecimal(lineRecord.Adjusted__c)
+            - safeDecimal(lineRecord.Reserved__c)
+            - safeDecimal(lineRecord.Used__c)
+            - safeDecimal(lineRecord.Expired__c);
     }
 
     private static Date buildExpiryDate(Integer yearValue, Integer expiryMonth, Integer expiryDay) {

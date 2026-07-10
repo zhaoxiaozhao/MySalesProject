@@ -123,6 +123,11 @@ public without sharing class LeaveRequestHandler {
             }
             if (req.Status__c == 'Approved' && old.Status__c != 'Approved') {
                 LeaveBalanceLedgerService.consumeReservedBalance(req.Id);
+            } else if (req.Status__c == 'Cancelled' && old.Status__c == 'Approved') {
+                LeaveBalanceLedgerService.reverseConsumedBalance(
+                    req.Id,
+                    'Reversed approved leave balance because the request was cancelled.'
+                );
             } else if ((req.Status__c == 'Rejected' || req.Status__c == 'Cancelled')
                 && req.Status__c != old.Status__c) {
                 LeaveBalanceLedgerService.releaseReservedBalance(req.Id, null);

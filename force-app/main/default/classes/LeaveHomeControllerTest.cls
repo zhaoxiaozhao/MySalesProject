@@ -19,7 +19,9 @@ private class LeaveHomeControllerTest {
     @IsTest
     static void testGetHrPendingApprovalsReturnsPendingHrRecords() {
         User employee = createUser('hrpendingemp');
+        User hrUser = createUser('hrreviewer');
         Integer yearValue = Date.today().year();
+        assignPermissionSet(hrUser.Id, 'Leave_HR');
         Leave_Type_Definition__c annualDefinition = createLeaveTypeDefinition(
             'ANNUAL',
             'Annual Leave Policy'
@@ -35,14 +37,14 @@ private class LeaveHomeControllerTest {
 
         Leave_Request__c pendingHr = new Leave_Request__c(
             Employee__c = employee.Id,
-            Manager__c = UserInfo.getUserId(),
+            Manager__c = hrUser.Id,
             Leave_Type_Definition__c = annualDefinition.Id,
             Start_Date__c = Date.today().addDays(3),
             End_Date__c = Date.today().addDays(4),
             Status__c = 'Pending_HR_Approval',
             Balance_Deducted__c = false,
             Approval_Mode_Snapshot__c = 'HR Only',
-            Approval_Target_Snapshot__c = UserInfo.getUserId()
+            Approval_Target_Snapshot__c = hrUser.Id
         );
         Leave_Request__c draftRequest = new Leave_Request__c(
             Employee__c = employee.Id,
@@ -54,10 +56,145 @@ private class LeaveHomeControllerTest {
         );
         insert new List<Leave_Request__c>{ pendingHr, draftRequest };
 
-        List<Leave_Request__c> hrPending = LeaveHomeController.getHrPendingApprovals();
+        System.runAs(hrUser) {
+            List<Leave_Request__c> hrPending = LeaveHomeController.getHrPendingApprovals();
 
-        Assert.areEqual(1, hrPending.size());
-        Assert.areEqual(pendingHr.Id, hrPending[0].Id);
+            Assert.areEqual(1, hrPending.size());
+            Assert.areEqual(pendingHr.Id, hrPending[0].Id);
+        }
+    }
+
+    @IsTest
+    static void testGetHrPendingApprovalsReturnsEmptyWithoutHrScope() {
+        User employee = createUser('hrscopeemp');
+        User standardUser = createUser('standardscope');
+        Leave_Type_Definition__c annualDefinition = createLeaveTypeDefinition(
+            'ANNUAL',
+            'Annual Leave Policy'
+        );
+
+        insert new Leave_Request__c(
+            Employee__c = employee.Id,
+            Manager__c = UserInfo.getUserId(),
+            Leave_Type_Definition__c = annualDefinition.Id,
+            Start_Date__c = Date.today().addDays(3),
+            End_Date__c = Date.today().addDays(4),
+            Status__c = 'Pending_HR_Approval',
+            Balance_Deducted__c = false,
+            Approval_Mode_Snapshot__c = 'HR Only',
+            Approval_Target_Snapshot__c = 'HR_QUEUE'
+        );
+
+        System.runAs(standardUser) {
+            List<Leave_Request__c> hrPending = LeaveHomeController.getHrPendingApprovals();
+
+            Assert.areEqual(0, hrPending.size());
+        }
+    }
+
+    @IsTest
+    static void testGetPendingApprovalsReturnsManagerRecords() {
+        User manager = createUser('pendingmgr');
+        User employee = createUser('pendingemp');
+        employee.ManagerId = manager.Id;
+        update employee;
+
+        Leave_Type_Definition__c annualDefinition = createLeaveTypeDefinition(
+            'ANNUAL',
+            'Annual Leave Policy'
+        );
+
+        insert new Leave_Request__c(
+            Employee__c = employee.Id,
+            Manager__c = manager.Id,
+            Leave_Type_Definition__c = annualDefinition.Id,
+            Start_Date__c = Date.today().addDays(2),
+            End_Date__c = Date.today().addDays(3),
+            Status__c = 'Submitted',
+            Balance_Deducted__c = false,
+            Reason__c = 'Needs manager review'
+        );
+
+        System.runAs(manager) {
+            List<Leave_Request__c> pendingApprovals = LeaveHomeController.getPendingApprovals();
+            LeaveHomeController.RoleInfo roleInfo = LeaveHomeController.getUserRoles();
+
+            Assert.areEqual(true, roleInfo.isManager);
+            Assert.isNotNull(pendingApprovals);
+        }
+    }
+
+    @IsTest
+    static void testGetMyBalanceAndHrScopeQueriesReturnData() {
+        User hrUser = createUser('balancehr');
+        User employee = createUser('balemp');
+        assignPermissionSet(hrUser.Id, 'Leave_HR');
+        Leave_Type_Definition__c annualDefinition = createLeaveTypeDefinition(
+            'ANNUAL',
+            'Annual Leave Policy'
+        );
+
+        insert new Leave_Balance__c(
+            User__c = hrUser.Id,
+            Year__c = Date.today().year(),
+            Annual_Leave__c = 12,
+            Sick_Leave__c = 6,
+            Personal_Leave__c = 3
+        );
+        insert new Leave_Request__c(
+            Employee__c = employee.Id,
+            Manager__c = hrUser.Id,
+            Leave_Type_Definition__c = annualDefinition.Id,
+            Start_Date__c = Date.today().addDays(4),
+            End_Date__c = Date.today().addDays(5),
+            Status__c = 'Pending_HR_Approval',
+            Balance_Deducted__c = false,
+            Reason__c = 'HR visible request'
+        );
+
+        System.runAs(hrUser) {
+            LeaveBalanceLedgerService.BalanceSummary myBalance = LeaveHomeController.getMyBalance();
+            List<LeaveBalanceLedgerService.BalanceSummary> allBalances = LeaveHomeController.getAllBalances();
+            List<Leave_Request__c> allRequests = LeaveHomeController.getAllRequests();
+
+            Assert.isNotNull(myBalance);
+            Assert.areEqual(hrUser.Id, myBalance.userId);
+            Assert.areEqual(12, myBalance.annualTotalAvailable);
+            Assert.areEqual(1, allBalances.size());
+            Assert.areEqual(hrUser.Id, allBalances[0].userId);
+            Assert.areEqual(1, allRequests.size());
+            Assert.areEqual(employee.Id, allRequests[0].Employee__c);
+        }
+    }
+
+    @IsTest
+    static void testGetAllRequestsAndBalancesRequireHrScope() {
+        User standardUser = createUser('nonhrviewer');
+        Leave_Type_Definition__c annualDefinition = createLeaveTypeDefinition(
+            'ANNUAL',
+            'Annual Leave Policy'
+        );
+        insert new Leave_Balance__c(
+            User__c = UserInfo.getUserId(),
+            Year__c = Date.today().year(),
+            Annual_Leave__c = 10,
+            Sick_Leave__c = 5,
+            Personal_Leave__c = 5
+        );
+        insert new Leave_Request__c(
+            Employee__c = UserInfo.getUserId(),
+            Leave_Type_Definition__c = annualDefinition.Id,
+            Start_Date__c = Date.today().addDays(2),
+            End_Date__c = Date.today().addDays(2),
+            Status__c = 'Draft',
+            Balance_Deducted__c = false,
+            Reason__c = 'Self request'
+        );
+
+        System.runAs(standardUser) {
+            Assert.areEqual(0, LeaveHomeController.getAllRequests().size());
+            Assert.areEqual(0, LeaveHomeController.getAllBalances().size());
+        }
     }
 
     @IsTest
@@ -89,6 +226,37 @@ private class LeaveHomeControllerTest {
         Assert.areEqual(true, typeCodes.contains('SICK'));
         Assert.areEqual(false, typeCodes.contains('STUDY'));
         Assert.areEqual(false, typeCodes.contains('PERSONAL'));
+    }
+
+    @IsTest
+    static void testCreateLeaveRequestRejectsInvalidInputs() {
+        Leave_Type_Definition__c inactiveDefinition = new Leave_Type_Definition__c(
+            Name = 'Inactive Annual Policy',
+            Type_Code__c = 'ANNUAL',
+            Is_Active__c = false,
+            Policy_Version__c = 1
+        );
+        insert inactiveDefinition;
+
+        assertAuraHandledExceptionForCreate(null, Date.today(), Date.today(), 'Missing definition');
+        assertAuraHandledExceptionForCreate(
+            inactiveDefinition.Id,
+            null,
+            Date.today(),
+            'Missing start date'
+        );
+        assertAuraHandledExceptionForCreate(
+            inactiveDefinition.Id,
+            Date.today().addDays(2),
+            Date.today().addDays(1),
+            'Inverted date range'
+        );
+        assertAuraHandledExceptionForCreate(
+            inactiveDefinition.Id,
+            Date.today().addDays(1),
+            Date.today().addDays(2),
+            'Inactive definition'
+        );
     }
 
     @IsTest
@@ -218,6 +386,137 @@ private class LeaveHomeControllerTest {
     }
 
     @IsTest
+    static void testSubmitLeaveActionRejectsNonOwnerRequest() {
+        User otherEmployee = createUser('otherowner');
+        Leave_Type_Definition__c annualDefinition = createLeaveTypeDefinition(
+            'ANNUAL',
+            'Annual Leave Policy'
+        );
+
+        Leave_Request__c otherUsersRequest = new Leave_Request__c(
+            Employee__c = otherEmployee.Id,
+            Leave_Type_Definition__c = annualDefinition.Id,
+            Start_Date__c = Date.today().addDays(2),
+            End_Date__c = Date.today().addDays(2),
+            Status__c = 'Draft',
+            Balance_Deducted__c = false,
+            Reason__c = 'Owned by another employee'
+        );
+        insert otherUsersRequest;
+
+        Boolean blocked = false;
+        try {
+            LeaveHomeController.submitLeaveAction(otherUsersRequest.Id);
+            Assert.fail('Submitting another employee request should be blocked.');
+        } catch (AuraHandledException ex) {
+            blocked = true;
+        }
+        Assert.areEqual(true, blocked);
+    }
+
+    @IsTest
+    static void testCancelLeaveActionAllowsFutureApprovedRequest() {
+        Leave_Type_Definition__c annualDefinition = createLeaveTypeDefinition(
+            'ANNUAL',
+            'Annual Leave Policy'
+        );
+        insert new Leave_Balance__c(
+            User__c = UserInfo.getUserId(),
+            Year__c = Date.today().year(),
+            Annual_Leave__c = 10,
+            Sick_Leave__c = 5,
+            Personal_Leave__c = 5
+        );
+
+        Leave_Request__c approvedRequest = new Leave_Request__c(
+            Employee__c = UserInfo.getUserId(),
+            Leave_Type_Definition__c = annualDefinition.Id,
+            Start_Date__c = Date.today().addDays(7),
+            End_Date__c = Date.today().addDays(8),
+            Status__c = 'Approved',
+            Balance_Deducted__c = false,
+            Reason__c = 'Approved future request'
+        );
+        insert approvedRequest;
+        LeaveService.deductBalance(approvedRequest.Id);
+
+        Test.startTest();
+        LeaveHomeController.cancelLeaveAction(approvedRequest.Id);
+        Test.stopTest();
+
+        Leave_Request__c cancelledRequest = [
+            SELECT Status__c, Balance_Deducted__c
+            FROM Leave_Request__c
+            WHERE Id = :approvedRequest.Id
+        ];
+        Leave_Balance__c restoredBalance = [
+            SELECT Annual_Leave__c
+            FROM Leave_Balance__c
+            WHERE User__c = :UserInfo.getUserId()
+            AND Year__c = :Date.today().year()
+            LIMIT 1
+        ];
+
+        Assert.areEqual('Cancelled', cancelledRequest.Status__c);
+        Assert.areEqual(false, cancelledRequest.Balance_Deducted__c);
+        Assert.areEqual(10, restoredBalance.Annual_Leave__c);
+    }
+
+    @IsTest
+    static void testApproveAndRejectLeaveActionWrapUnauthorizedErrors() {
+        User manager = createUser('realmanager');
+        User outsider = createUser('approvalouts');
+        User employee = createUser('approvalemp');
+        employee.ManagerId = manager.Id;
+        update employee;
+
+        Leave_Type_Definition__c annualDefinition = createLeaveTypeDefinition(
+            'ANNUAL',
+            'Annual Leave Policy'
+        );
+
+        insert new Leave_Balance__c(
+            User__c = employee.Id,
+            Year__c = Date.today().year(),
+            Annual_Leave__c = 10,
+            Sick_Leave__c = 5,
+            Personal_Leave__c = 5
+        );
+
+        Leave_Request__c submittedRequest = new Leave_Request__c(
+            Employee__c = employee.Id,
+            Manager__c = manager.Id,
+            Leave_Type_Definition__c = annualDefinition.Id,
+            Start_Date__c = Date.today().addDays(8),
+            End_Date__c = Date.today().addDays(9),
+            Status__c = 'Submitted',
+            Balance_Deducted__c = false,
+            Reason__c = 'Approval wrapper coverage'
+        );
+        insert submittedRequest;
+
+        System.runAs(outsider) {
+            Boolean approveBlocked = false;
+            try {
+                LeaveHomeController.approveLeaveAction(submittedRequest.Id);
+                Assert.fail('Unauthorized approval should be blocked.');
+            } catch (AuraHandledException ex) {
+                approveBlocked = true;
+            }
+            Assert.areEqual(true, approveBlocked);
+
+            Boolean rejectBlocked = false;
+            try {
+                LeaveHomeController.rejectLeaveAction(submittedRequest.Id);
+                Assert.fail('Unauthorized rejection should be blocked.');
+            } catch (AuraHandledException ex) {
+                rejectBlocked = true;
+            }
+            Assert.areEqual(true, rejectBlocked);
+        }
+    }
+
+    @IsTest
     static void testCreateLeaveRequestRejectsUnsupportedDefinition() {
         Leave_Type_Definition__c studyDefinition = new Leave_Type_Definition__c(
             Name = 'Study Leave Policy',
@@ -282,5 +581,46 @@ private class LeaveHomeControllerTest {
         );
         insert definitionRecord;
         return definitionRecord;
+    }
+
+    private static void assertAuraHandledExceptionForCreate(
+        Id leaveTypeDefinitionId,
+        Date startDate,
+        Date endDate,
+        String scenarioLabel
+    ) {
+        Boolean blocked = false;
+        try {
+            LeaveHomeController.createLeaveRequest(
+                leaveTypeDefinitionId,
+                startDate,
+                endDate,
+                scenarioLabel
+            );
+            Assert.fail('Create request should be blocked for scenario: ' + scenarioLabel);
+        } catch (AuraHandledException ex) {
+            blocked = true;
+        }
+        Assert.areEqual(true, blocked);
+    }
+
+    private static void assignPermissionSet(Id userId, String permissionSetName) {
+        PermissionSet permissionSetRecord = [
+            SELECT Id
+            FROM PermissionSet
+            WHERE Name = :permissionSetName
+            LIMIT 1
+        ];
+        User actingUser = [
+            SELECT Id
+            FROM User
+            WHERE Id = :UserInfo.getUserId()
+        ];
+        System.runAs(actingUser) {
+            insert new PermissionSetAssignment(
+                AssigneeId = userId,
+                PermissionSetId = permissionSetRecord.Id
+            );
+        }
     }
 }

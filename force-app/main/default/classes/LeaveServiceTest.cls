@@ -6,10 +6,22 @@ private class LeaveServiceTest {
 
     @IsTest
     static void testRejectLeaveUsesHrStageHistory() {
-        User employee = createEmployeeUser('rejecthr');
         Integer yearValue = Date.today().year();
-        assignPermissionSet(UserInfo.getUserId(), 'Leave_HR');
-        Leave_Type_Definition__c annualDefinition = createLeaveTypeDefinition(
+        Id employeeId = UserInfo.getUserId();
+        Group hrQueue = new Group(
+            Name = 'HR Queue',
+            DeveloperName = 'HR_QUEUE',
+            Type = 'Queue'
+        );
+        insert hrQueue;
+        insert new GroupMember(
+            GroupId = hrQueue.Id,
+            UserOrGroupId = UserInfo.getUserId()
+        );
+        LeaveApprovalRoutingService.clearApproverResolverCache();
+        Leave_Type_Definition__c annualDefinition;
+        Leave_Request__c requestRecord;
+        annualDefinition = createLeaveTypeDefinition(
             'ANNUAL',
             'Annual Leave Policy',
             true,
@@ -17,15 +29,15 @@ private class LeaveServiceTest {
         );
 
         insert new Leave_Balance__c(
-            User__c = employee.Id,
+            User__c = employeeId,
             Year__c = yearValue,
             Annual_Leave__c = 10,
             Sick_Leave__c = 5,
             Personal_Leave__c = 5
         );
 
-        Leave_Request__c requestRecord = new Leave_Request__c(
-            Employee__c = employee.Id,
+        requestRecord = new Leave_Request__c(
+            Employee__c = employeeId,
             Manager__c = UserInfo.getUserId(),
             Leave_Type_Definition__c = annualDefinition.Id,
             Start_Date__c = Date.today().addDays(5),
@@ -50,7 +62,9 @@ private class LeaveServiceTest {
             SELECT Stage__c, Action__c, Approver__c, Approver_Target__c, Comments__c
             FROM Leave_Approval_History__c
             WHERE Leave_Request__c = :requestRecord.Id
-            ORDER BY CreatedDate DESC
+            AND Stage__c = 'HR_Approval'
+            AND Action__c = 'Rejected'
+            ORDER BY Action_Time__c DESC, CreatedDate DESC
             LIMIT 1
         ];
 
@@ -381,7 +395,9 @@ private class LeaveServiceTest {
             SELECT Stage__c, Action__c, Approver__c, Approver_Target__c, Comments__c
             FROM Leave_Approval_History__c
             WHERE Leave_Request__c = :requestRecord.Id
-            ORDER BY CreatedDate DESC
+            AND Stage__c = 'Manager_Approval'
+            AND Action__c = 'Approved'
+            ORDER BY Action_Time__c DESC, CreatedDate DESC
             LIMIT 1
         ];
 
@@ -397,23 +413,27 @@ private class LeaveServiceTest {
 
     @IsTest
     static void testApproveLeaveRejectsUnauthorizedManagerApprover() {
-        User employee = createEmployeeUser('managerunauth');
         User outsider = createEmployeeUser('manageroutsider');
         Integer yearValue = Date.today().year();
-        assignPermissionSet(outsider.Id, 'Leave_Employee');
-
+        Id employeeId = UserInfo.getUserId();
+        Leave_Request__c requestRecord;
         insert new Leave_Balance__c(
-            User__c = employee.Id,
+            User__c = employeeId,
             Year__c = yearValue,
             Annual_Leave__c = 10,
             Sick_Leave__c = 5,
             Personal_Leave__c = 5
         );
 
-        Leave_Request__c requestRecord = new Leave_Request__c(
-            OwnerId = employee.Id,
-            Employee__c = employee.Id,
-            Leave_Type_Definition__c = createLeaveTypeDefinition('ANNUAL', 'Annual Leave Policy', true, 'Manager Only').Id,
+        requestRecord = new Leave_Request__c(
+            OwnerId = employeeId,
+            Employee__c = employeeId,
+            Leave_Type_Definition__c = createLeaveTypeDefinition(
+                'ANNUAL',
+                'Annual Leave Policy',
+                true,
+                'Manager Only'
+            ).Id,
             Start_Date__c = Date.today().addDays(9),
             End_Date__c = Date.today().addDays(10),
             Status__c = 'Draft',
@@ -441,23 +461,27 @@ private class LeaveServiceTest {
 
     @IsTest
     static void testRejectLeaveRejectsUnauthorizedHrApprover() {
-        User employee = createEmployeeUser('hrunauth');
         User outsider = createEmployeeUser('hroutsider');
         Integer yearValue = Date.today().year();
-        assignPermissionSet(outsider.Id, 'Leave_Employee');
-
+        Id employeeId = UserInfo.getUserId();
+        Leave_Request__c requestRecord;
         insert new Leave_Balance__c(
-            User__c = employee.Id,
+            User__c = employeeId,
             Year__c = yearValue,
             Annual_Leave__c = 10,
             Sick_Leave__c = 5,
             Personal_Leave__c = 5
         );
 
-        Leave_Request__c requestRecord = new Leave_Request__c(
-            Employee__c = employee.Id,
+        requestRecord = new Leave_Request__c(
+            Employee__c = employeeId,
             Manager__c = UserInfo.getUserId(),
-            Leave_Type_Definition__c = createLeaveTypeDefinition('ANNUAL', 'Annual Leave Policy', true, 'HR Only').Id,
+            Leave_Type_Definition__c = createLeaveTypeDefinition(
+                'ANNUAL',
+                'Annual Leave Policy',
+                true,
+                'HR Only'
+            ).Id,
             Start_Date__c = Date.today().addDays(11),
             End_Date__c = Date.today().addDays(12),
             Status__c = 'Pending_HR_Approval',
@@ -577,7 +601,8 @@ private class LeaveServiceTest {
             SELECT Stage__c, Action__c, Approver__c, Comments__c
             FROM Leave_Approval_History__c
             WHERE Leave_Request__c = :requestRecord.Id
-            ORDER BY CreatedDate DESC
+            AND Stage__c = 'Cancellation'
+            ORDER BY Action_Time__c DESC, CreatedDate DESC
             LIMIT 1
         ];
 
@@ -588,6 +613,129 @@ private class LeaveServiceTest {
         Assert.areEqual('Cancelled', history.Action__c);
         Assert.areEqual(UserInfo.getUserId(), history.Approver__c);
         Assert.areEqual('Cancelled pending approval', history.Comments__c);
+    }
+
+    @IsTest
+    static void testCancelApprovedFutureLeaveRestoresConsumedBalance() {
+        User employee = createEmployeeUser('cancelapproved');
+        Integer yearValue = Date.today().year();
+
+        insert new Leave_Balance__c(
+            User__c = employee.Id,
+            Year__c = yearValue,
+            Annual_Leave__c = 10,
+            Sick_Leave__c = 5,
+            Personal_Leave__c = 5
+        );
+
+        Leave_Request__c requestRecord = new Leave_Request__c(
+            Employee__c = employee.Id,
+            Leave_Type_Definition__c = createLeaveTypeDefinition('ANNUAL', 'Annual Leave Policy', true, 'Manager Only').Id,
+            Start_Date__c = Date.today().addDays(14),
+            End_Date__c = Date.today().addDays(15),
+            Status__c = 'Approved',
+            Balance_Deducted__c = false
+        );
+        insert requestRecord;
+
+        Test.startTest();
+        LeaveService.deductBalance(requestRecord.Id);
+        LeaveService.cancelLeave(requestRecord.Id, UserInfo.getUserId(), 'Cancelled approved leave');
+        Test.stopTest();
+
+        Leave_Request__c cancelledRequest = [
+            SELECT Status__c, Balance_Deducted__c
+            FROM Leave_Request__c
+            WHERE Id = :requestRecord.Id
+        ];
+        Leave_Balance__c restoredBalance = [
+            SELECT Annual_Leave__c
+            FROM Leave_Balance__c
+            WHERE User__c = :employee.Id
+            AND Year__c = :yearValue
+            LIMIT 1
+        ];
+        List<Leave_Request_Segment__c> segments = [
+            SELECT Segment_Status__c
+            FROM Leave_Request_Segment__c
+            WHERE Leave_Request__c = :requestRecord.Id
+        ];
+        List<Leave_Balance_Transaction__c> transactions = [
+            SELECT Transaction_Type__c, Comments__c
+            FROM Leave_Balance_Transaction__c
+            WHERE Leave_Request__c = :requestRecord.Id
+            ORDER BY CreatedDate
+        ];
+        Leave_Approval_History__c history = [
+            SELECT Stage__c, Action__c, Approver__c, Comments__c
+            FROM Leave_Approval_History__c
+            WHERE Leave_Request__c = :requestRecord.Id
+            AND Stage__c = 'Cancellation'
+            ORDER BY CreatedDate DESC
+            LIMIT 1
+        ];
+
+        Assert.areEqual('Cancelled', cancelledRequest.Status__c);
+        Assert.areEqual(false, cancelledRequest.Balance_Deducted__c);
+        Assert.areEqual(10, restoredBalance.Annual_Leave__c, 'Approved leave cancellation should restore used balance.');
+        Assert.areEqual(1, segments.size());
+        Assert.areEqual('Released', segments[0].Segment_Status__c);
+        Assert.areEqual(2, transactions.size());
+        Assert.areEqual('Consume', transactions[0].Transaction_Type__c);
+        Assert.areEqual('Reverse_Consume', transactions[1].Transaction_Type__c);
+        Assert.areEqual('Cancellation', history.Stage__c);
+        Assert.areEqual('Cancelled', history.Action__c);
+        Assert.areEqual(UserInfo.getUserId(), history.Approver__c);
+        Assert.areEqual('Cancelled approved leave', history.Comments__c);
+    }
+
+    @IsTest
+    static void testCancelApprovedStartedLeaveIsRejected() {
+        User employee = createEmployeeUser('cancelstarted');
+        Integer yearValue = Date.today().year();
+
+        insert new Leave_Balance__c(
+            User__c = employee.Id,
+            Year__c = yearValue,
+            Annual_Leave__c = 10,
+            Sick_Leave__c = 5,
+            Personal_Leave__c = 5
+        );
+
+        Leave_Request__c requestRecord = new Leave_Request__c(
+            Employee__c = employee.Id,
+            Leave_Type_Definition__c = createLeaveTypeDefinition('ANNUAL', 'Annual Leave Policy', true, 'Manager Only').Id,
+            Start_Date__c = Date.today(),
+            End_Date__c = Date.today().addDays(1),
+            Status__c = 'Approved',
+            Balance_Deducted__c = false
+        );
+        insert requestRecord;
+        LeaveService.deductBalance(requestRecord.Id);
+
+        try {
+            LeaveService.cancelLeave(requestRecord.Id, UserInfo.getUserId(), 'Should fail');
+            Assert.fail('Started approved leave should not be cancellable.');
+        } catch (IllegalArgumentException ex) {
+            Assert.isTrue(ex.getMessage().contains('before the leave start date'));
+        }
+
+        Leave_Request__c unchangedRequest = [
+            SELECT Status__c, Balance_Deducted__c
+            FROM Leave_Request__c
+            WHERE Id = :requestRecord.Id
+        ];
+        Leave_Balance__c updatedBalance = [
+            SELECT Annual_Leave__c
+            FROM Leave_Balance__c
+            WHERE User__c = :employee.Id
+            AND Year__c = :yearValue
+            LIMIT 1
+        ];
+
+        Assert.areEqual('Approved', unchangedRequest.Status__c);
+        Assert.areEqual(true, unchangedRequest.Balance_Deducted__c);
+        Assert.areEqual(8, updatedBalance.Annual_Leave__c);
     }
 
     @IsTest
@@ -814,10 +962,17 @@ private class LeaveServiceTest {
             WHERE Name = :permissionSetName
             LIMIT 1
         ];
-        insert new PermissionSetAssignment(
-            AssigneeId = userId,
-            PermissionSetId = permissionSetRecord.Id
-        );
+        User actingUser = [
+            SELECT Id
+            FROM User
+            WHERE Id = :UserInfo.getUserId()
+        ];
+        System.runAs(actingUser) {
+            insert new PermissionSetAssignment(
+                AssigneeId = userId,
+                PermissionSetId = permissionSetRecord.Id
+            );
+        }
     }
 
     private static Leave_Type_Definition__c createLeaveTypeDefinition(

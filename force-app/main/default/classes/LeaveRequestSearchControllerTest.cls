@@ -1,6 +1,14 @@
 @IsTest
 private class LeaveRequestSearchControllerTest {
 
+    private static final String PREPARED_HR_USER_LAST_NAME = 'PreparedHr';
+
+    @TestSetup
+    static void setupUsers() {
+        User hrUser = createUser('searchhrsetup', PREPARED_HR_USER_LAST_NAME);
+        assignPermissionSetSetup(hrUser.Id, 'Leave_HR');
+    }
+
     @IsTest
     static void testGetSearchContextReturnsManagerAndHrScopes() {
         User manager = createUser('searchcontext');
@@ -118,13 +126,11 @@ private class LeaveRequestSearchControllerTest {
 
     @IsTest
     static void testSearchLeaveRequestsHrPendingScopeRequiresHrPermission() {
-        User hrUser = createUser('searchhr');
-        assignPermissionSet(hrUser.Id, 'Leave_HR');
-        User employee = createUser('searchhremp');
+        User hrUser = getPreparedUser(PREPARED_HR_USER_LAST_NAME);
         Leave_Type_Definition__c annualDefinition = createLeaveTypeDefinition('ANNUAL', 'Annual Leave Policy');
 
         insert new Leave_Request__c(
-            Employee__c = employee.Id,
+            Employee__c = UserInfo.getUserId(),
             Leave_Type_Definition__c = annualDefinition.Id,
             Start_Date__c = Date.today().addDays(2),
             End_Date__c = Date.today().addDays(3),
@@ -157,13 +163,24 @@ private class LeaveRequestSearchControllerTest {
             WHERE Name = :permissionSetName
             LIMIT 1
         ];
-        insert new PermissionSetAssignment(
-            AssigneeId = userId,
-            PermissionSetId = permissionSetRecord.Id
-        );
+        User actingUser = [
+            SELECT Id
+            FROM User
+            WHERE Id = :UserInfo.getUserId()
+        ];
+        System.runAs(actingUser) {
+            insert new PermissionSetAssignment(
+                AssigneeId = userId,
+                PermissionSetId = permissionSetRecord.Id
+            );
+        }
     }
 
     private static User createUser(String key) {
+        return createUser(key, 'Home');
+    }
+
+    private static User createUser(String key, String lastName) {
         User currentUser = [
             SELECT ProfileId
             FROM User
@@ -174,7 +191,7 @@ private class LeaveRequestSearchControllerTest {
             Alias = uniqueToken.substring(0, Math.min(8, uniqueToken.length())),
             Email = uniqueToken + '@example.com',
             EmailEncodingKey = 'UTF-8',
-            LastName = 'Home',
+            LastName = lastName,
             LanguageLocaleKey = 'en_US',
             LocaleSidKey = 'en_US',
             ProfileId = currentUser.ProfileId,
@@ -183,6 +200,29 @@ private class LeaveRequestSearchControllerTest {
         );
         insert userRecord;
         return userRecord;
+    }
+
+    private static User getPreparedUser(String lastName) {
+        return [
+            SELECT Id
+            FROM User
+            WHERE LastName = :lastName
+            ORDER BY CreatedDate DESC
+            LIMIT 1
+        ];
+    }
+
+    private static void assignPermissionSetSetup(Id userId, String permissionSetName) {
+        PermissionSet permissionSetRecord = [
+            SELECT Id
+            FROM PermissionSet
+            WHERE Name = :permissionSetName
+            LIMIT 1
+        ];
+        insert new PermissionSetAssignment(
+            AssigneeId = userId,
+            PermissionSetId = permissionSetRecord.Id
+        );
     }
 
     private static Leave_Type_Definition__c createLeaveTypeDefinition(String typeCode, String name) {

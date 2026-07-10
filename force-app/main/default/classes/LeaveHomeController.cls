@@ -3,12 +3,13 @@ public with sharing class LeaveHomeController {
     private static final Set<String> REQUEST_ENABLED_TYPE_CODES = new Set<String>{
         'ANNUAL', 'SICK', 'PERSONAL'
     };
+    private static Set<String> nonQueryableRequestFields = new Set<String>();
 
     @AuraEnabled(cacheable=true)
     public static RoleInfo getUserRoles() {
         RoleInfo info = new RoleInfo();
-        info.isManager = hasPermissionSet('Leave_Manager') || hasDirectReports();
-        info.isHR = hasPermissionSet('Leave_HR') || hasPermissionSet('Leave_Admin');
+        info.isManager = canAccessManagerScope();
+        info.isHR = canAccessHrScope();
         info.isEmployee = true;
         return info;
     }
@@ -23,49 +24,116 @@ public with sharing class LeaveHomeController {
 
     @AuraEnabled
     public static List<Leave_Request__c> getMyRequests() {
-        return [
-            SELECT Id, Name, Leave_Type_Name__c, Start_Date__c, End_Date__c,
-                   Days__c, Status__c, Submitted_Time__c, Reason__c, Balance_Deducted__c
-            FROM Leave_Request__c WHERE Employee__c = :UserInfo.getUserId()
-            ORDER BY CreatedDate DESC LIMIT 50
-        ];
+        return queryLeaveRequests(
+            new List<String>{
+                'Id',
+                'Name',
+                'Leave_Type_Name__c',
+                'Leave_Type_Definition__r.Name',
+                'Start_Date__c',
+                'End_Date__c',
+                'Days__c',
+                'Status__c',
+                'Submitted_Time__c',
+                'Reason__c',
+                'Balance_Deducted__c'
+            },
+            'Employee__c = ' + toSoqlLiteral(UserInfo.getUserId()),
+            50
+        );
     }
 
     @AuraEnabled
     public static List<Leave_Request__c> getPendingApprovals() {
-        return [
-            SELECT Id, Name, Leave_Type_Name__c, Start_Date__c, End_Date__c,
-                   Days__c, Status__c, Employee__c, Employee__r.Name
-            FROM Leave_Request__c
-            WHERE Manager__c = :UserInfo.getUserId()
-            AND Status__c IN ('Submitted', 'Pending_Manager_Approval')
-            ORDER BY CreatedDate DESC LIMIT 50
-        ];
+        if (!canAccessManagerScope()) {
+            return new List<Leave_Request__c>();
+        }
+        Set<Id> directReportIds = getDirectReportUserIds(UserInfo.getUserId());
+        if (directReportIds.isEmpty()) {
+            return new List<Leave_Request__c>();
+        }
+        List<Leave_Request__c> pendingCandidates = queryLeaveRequests(
+            new List<String>{
+                'Id',
+                'Name',
+                'Start_Date__c',
+                'End_Date__c',
+                'Days__c',
+                'Status__c',
+                'Employee__c',
+                'Employee__r.Name'
+            },
+            'Status__c IN (\'Submitted\', \'Pending_Manager_Approval\')',
+            200
+        );
+
+        List<Leave_Request__c> pendingApprovals = new List<Leave_Request__c>();
+        for (Leave_Request__c requestRecord : pendingCandidates) {
+            Id employeeId = getLeaveRequestIdValue(requestRecord, 'Employee__c');
+            if (employeeId != null) {
+                requestRecord.put('Employee__c', employeeId);
+            }
+            if (directReportIds.contains(employeeId)) {
+                pendingApprovals.add(requestRecord);
+            }
+            if (pendingApprovals.size() == 50) {
+                break;
+            }
+        }
+        return pendingApprovals;
     }
 
     @AuraEnabled
     public static List<Leave_Request__c> getHrPendingApprovals() {
-        return [
-            SELECT Id, Name, Leave_Type_Name__c, Start_Date__c, End_Date__c,
-                   Days__c, Status__c, Employee__c, Employee__r.Name
-            FROM Leave_Request__c
-            WHERE Status__c = 'Pending_HR_Approval'
-            ORDER BY CreatedDate DESC LIMIT 50
-        ];
+        if (!canAccessHrScope()) {
+            return new List<Leave_Request__c>();
+        }
+        return queryLeaveRequests(
+            new List<String>{
+                'Id',
+                'Name',
+                'Leave_Type_Name__c',
+                'Leave_Type_Definition__r.Name',
+                'Start_Date__c',
+                'End_Date__c',
+                'Days__c',
+                'Status__c',
+                'Employee__c',
+                'Employee__r.Name'
+            },
+            'Status__c = \'Pending_HR_Approval\'',
+            50
+        );
     }
 
     @AuraEnabled
     public static List<Leave_Request__c> getAllRequests() {
-        return [
-            SELECT Id, Name, Leave_Type_Name__c, Start_Date__c, End_Date__c,
-                   Days__c, Status__c, Employee__c, Employee__r.Name
-            FROM Leave_Request__c
-            ORDER BY CreatedDate DESC LIMIT 200
-        ];
+        if (!canAccessHrScope()) {
+            return new List<Leave_Request__c>();
+        }
+        return queryLeaveRequests(
+            new List<String>{
+                'Id',
+                'Name',
+                'Leave_Type_Name__c',
+                'Leave_Type_Definition__r.Name',
+                'Start_Date__c',
+                'End_Date__c',
+                'Days__c',
+                'Status__c',
+                'Employee__c',
+                'Employee__r.Name'
+            },
+            null,
+            200
+        );
     }
 
     @AuraEnabled
     public static List<LeaveBalanceLedgerService.BalanceSummary> getAllBalances() {
+        if (!canAccessHrScope()) {
+            return new List<LeaveBalanceLedgerService.BalanceSummary>();
+        }
         return LeaveBalanceLedgerService.getAllBalanceSummaries(200);
     }
 
@@ -208,8 +276,178 @@ public with sharing class LeaveHomeController {
             AND PermissionSet.Name = :name] > 0;
     }
 
+    private static Boolean canAccessManagerScope() {
+        return hasPermissionSet('Leave_Manager') || hasDirectReports();
+    }
+
+    private static Boolean canAccessHrScope() {
+        return hasPermissionSet('Leave_HR') || hasPermissionSet('Leave_Admin');
+    }
+
     private static Boolean hasDirectReports() {
-        return [SELECT COUNT() FROM User WHERE ManagerId = :UserInfo.getUserId()] > 0;
+        return !getDirectReportUserIds(UserInfo.getUserId()).isEmpty();
+    }
+
+    private static List<Leave_Request__c> queryLeaveRequests(
+        List<String> requestedFields,
+        String whereClause,
+        Integer limitSize
+    ) {
+        while (true) {
+            List<String> selectFields = new List<String>();
+            Set<String> addedFields = new Set<String>();
+            for (String requestedField : requestedFields) {
+                addLeaveRequestFieldIfQueryable(selectFields, addedFields, requestedField);
+            }
+
+            String soql = 'SELECT ' + String.join(selectFields, ', ') + ' FROM Leave_Request__c';
+            if (!String.isBlank(whereClause)) {
+                soql += ' WHERE ' + whereClause;
+            }
+            soql += ' ORDER BY CreatedDate DESC';
+            if (limitSize != null && limitSize > 0) {
+                soql += ' LIMIT ' + String.valueOf(limitSize);
+            }
+
+            try {
+                List<Leave_Request__c> requests = new List<Leave_Request__c>();
+                for (SObject record : Database.query(soql)) {
+                    requests.add((Leave_Request__c)record);
+                }
+                return requests;
+            } catch (QueryException ex) {
+                String missingFieldApiName = extractMissingFieldApiName(ex);
+                if (String.isBlank(missingFieldApiName) ||
+                    !markRequestFieldAsNonQueryable(requestedFields, missingFieldApiName)) {
+                    throw ex;
+                }
+            }
+        }
+        return new List<Leave_Request__c>();
+    }
+
+    private static String toSoqlLiteral(Object value) {
+        return value == null
+            ? 'null'
+            : '\'' + String.escapeSingleQuotes(String.valueOf(value)) + '\'';
+    }
+
+    private static Set<Id> getDirectReportUserIds(Id managerId) {
+        Set<Id> directReportIds = new Set<Id>();
+        if (managerId == null) {
+            return directReportIds;
+        }
+
+        for (User directReport : [
+            SELECT Id
+            FROM User
+            WHERE ManagerId = :managerId
+        ]) {
+            directReportIds.add(directReport.Id);
+        }
+        return directReportIds;
+    }
+
+    private static void addLeaveRequestFieldIfQueryable(
+        List<String> selectFields,
+        Set<String> addedFields,
+        String fieldPath
+    ) {
+        if (String.isBlank(fieldPath)) {
+            return;
+        }
+
+        Integer relationSeparatorIndex = fieldPath.indexOf('.');
+        String rootFieldApiName = relationSeparatorIndex > -1
+            ? fieldPath.substring(0, relationSeparatorIndex)
+            : fieldPath;
+        if (!hasLeaveRequestField(rootFieldApiName) ||
+            nonQueryableRequestFields.contains(rootFieldApiName) ||
+            nonQueryableRequestFields.contains(fieldPath) ||
+            addedFields.contains(fieldPath)) {
+            return;
+        }
+
+        selectFields.add(fieldPath);
+        addedFields.add(fieldPath);
+    }
+
+    private static Boolean hasLeaveRequestField(String fieldApiName) {
+        return !String.isBlank(fieldApiName) &&
+            Leave_Request__c.SObjectType.getDescribe().fields.getMap().containsKey(fieldApiName);
+    }
+
+    private static Id getLeaveRequestIdValue(Leave_Request__c requestRecord, String fieldApiName) {
+        if (requestRecord == null || String.isBlank(fieldApiName)) {
+            return null;
+        }
+
+        Map<String, Object> populatedFields = requestRecord.getPopulatedFieldsAsMap();
+        if (populatedFields.containsKey(fieldApiName)) {
+            return (Id)populatedFields.get(fieldApiName);
+        }
+        return queryLeaveRequestIdValue(requestRecord.Id, fieldApiName);
+    }
+
+    private static Id queryLeaveRequestIdValue(Id leaveRequestId, String fieldApiName) {
+        if (leaveRequestId == null || !hasLeaveRequestField(fieldApiName)) {
+            return null;
+        }
+
+        try {
+            String soql =
+                'SELECT ' + fieldApiName +
+                ' FROM Leave_Request__c WHERE Id = :leaveRequestId';
+            List<SObject> records = Database.query(soql);
+            if (records.isEmpty()) {
+                return null;
+            }
+            return (Id)records[0].get(fieldApiName);
+        } catch (QueryException ex) {
+            return null;
+        }
+    }
+
+    private static Boolean markRequestFieldAsNonQueryable(
+        List<String> requestedFields,
+        String missingFieldApiName
+    ) {
+        if (String.isBlank(missingFieldApiName) || nonQueryableRequestFields.contains(missingFieldApiName)) {
+            return false;
+        }
+
+        Boolean matchedRequestedField = false;
+        for (String requestedField : requestedFields) {
+            if (requestedField == missingFieldApiName ||
+                requestedField.startsWith(missingFieldApiName + '.')) {
+                matchedRequestedField = true;
+                nonQueryableRequestFields.add(requestedField);
+            }
+        }
+        if (matchedRequestedField) {
+            nonQueryableRequestFields.add(missingFieldApiName);
+        }
+        return matchedRequestedField;
+    }
+
+    private static String extractMissingFieldApiName(QueryException ex) {
+        String message = ex == null ? null : ex.getMessage();
+        if (String.isBlank(message)) {
+            return null;
+        }
+
+        String prefix = 'No such column \'';
+        Integer prefixIndex = message.indexOf(prefix);
+        if (prefixIndex < 0) {
+            return null;
+        }
+
+        Integer fieldStartIndex = prefixIndex + prefix.length();
+        Integer fieldEndIndex = message.indexOf('\'', fieldStartIndex);
+        if (fieldEndIndex <= fieldStartIndex) {
+            return null;
+        }
+        return message.substring(fieldStartIndex, fieldEndIndex);
     }
 
     private static void validateEmployeeRequestOwnership(Id leaveRequestId) {

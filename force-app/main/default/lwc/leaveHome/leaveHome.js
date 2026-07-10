@@ -345,12 +345,17 @@ export default class LeaveHome extends LightningElement {
     }
 
     mapEmployeeRequest(requestRow) {
+        const todayValue = new Date().toISOString().slice(0, 10);
+        const canCancelApprovedFutureLeave = requestRow.Status__c === 'Approved'
+            && requestRow.Start_Date__c
+            && requestRow.Start_Date__c > todayValue;
         return {
             ...requestRow,
+            Leave_Type_Name__c: this.resolveLeaveTypeName(requestRow),
             detailUrl: '/lightning/r/Leave_Request__c/' + requestRow.Id + '/view',
             submitDisabled: requestRow.Status__c !== 'Draft',
             cancelDisabled: !['Draft', 'Submitted', 'Pending_Manager_Approval', 'Pending_HR_Approval']
-                .includes(requestRow.Status__c) || requestRow.Balance_Deducted__c,
+                .includes(requestRow.Status__c) && !canCancelApprovedFutureLeave,
         };
     }
 
@@ -361,6 +366,7 @@ export default class LeaveHome extends LightningElement {
         return {
             ...requestRow,
             EmployeeName: requestRow.Employee__r ? requestRow.Employee__r.Name : '',
+            Leave_Type_Name__c: this.resolveLeaveTypeName(requestRow),
             detailUrl: '/lightning/r/Leave_Request__c/' + requestRow.Id + '/view',
             approveDisabled: !actionableStatuses.includes(requestRow.Status__c),
             rejectDisabled: !actionableStatuses.includes(requestRow.Status__c),
@@ -371,8 +377,19 @@ export default class LeaveHome extends LightningElement {
         return {
             ...requestRow,
             EmployeeName: requestRow.Employee__r ? requestRow.Employee__r.Name : '',
+            Leave_Type_Name__c: this.resolveLeaveTypeName(requestRow),
             detailUrl: '/lightning/r/Leave_Request__c/' + requestRow.Id + '/view',
         };
+    }
+
+    resolveLeaveTypeName(requestRow) {
+        if (requestRow.Leave_Type_Name__c) {
+            return requestRow.Leave_Type_Name__c;
+        }
+        if (requestRow.Leave_Type_Definition__r && requestRow.Leave_Type_Definition__r.Name) {
+            return requestRow.Leave_Type_Definition__r.Name;
+        }
+        return '';
     }
 
     mapBalanceRow(balanceRow) {

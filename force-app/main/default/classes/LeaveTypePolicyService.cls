@@ -1,5 +1,24 @@
 public without sharing class LeaveTypePolicyService {
 
+    private static final List<String> POLICY_QUERY_FIELDS = new List<String>{
+        'Id',
+        'Name',
+        'Type_Code__c',
+        'Is_Active__c',
+        'Allow_Carryover__c',
+        'Carryover_Limit__c',
+        'Carryover_Expire_Month__c',
+        'Carryover_Expire_Day__c',
+        'Requires_HR_Approval__c',
+        'Approval_Mode__c',
+        'Auto_Approve_Below_Days__c',
+        'Escalate_Above_Days__c',
+        'Escalation_Target__c',
+        'Approval_Group_Key__c',
+        'Policy_Version__c'
+    };
+    private static Set<String> nonQueryableDefinitionFields = new Set<String>();
+
     public class LeaveTypePolicy {
         public Id definitionId;
         public String typeCode;
@@ -52,36 +71,15 @@ public without sharing class LeaveTypePolicyService {
             return policyByTypeCode;
         }
 
-        List<Leave_Type_Definition__c> definitions = [
-            SELECT Id, Name, Type_Code__c, Is_Active__c, Allow_Carryover__c, Carryover_Limit__c,
-                   Carryover_Expire_Month__c, Carryover_Expire_Day__c, Requires_HR_Approval__c,
-                   Approval_Mode__c, Auto_Approve_Below_Days__c, Escalate_Above_Days__c,
-                   Escalation_Target__c, Approval_Group_Key__c, Policy_Version__c
-            FROM Leave_Type_Definition__c
-            WHERE Type_Code__c IN :normalizedCodes
-        ];
+        if (!hasDefinitionField('Type_Code__c')) {
+            return policyByTypeCode;
+        }
 
-        for (Leave_Type_Definition__c definition : definitions) {
-            LeaveTypePolicy policy = buildDefaultPolicy(definition.Type_Code__c);
-            policy.definitionId = definition.Id;
-            policy.typeCode = definition.Type_Code__c;
-            policy.typeName = definition.Name;
-            policy.isDefined = true;
-            policy.isActive = definition.Is_Active__c;
-            policy.allowCarryover = definition.Allow_Carryover__c;
-            policy.carryoverLimit = definition.Carryover_Limit__c;
-            policy.carryoverExpireMonth = toInteger(definition.Carryover_Expire_Month__c);
-            policy.carryoverExpireDay = toInteger(definition.Carryover_Expire_Day__c);
-            policy.requiresHrApproval = definition.Requires_HR_Approval__c;
-            policy.approvalMode = String.isBlank(definition.Approval_Mode__c)
-                ? resolveDefaultApprovalMode(definition.Requires_HR_Approval__c)
-                : definition.Approval_Mode__c;
-            policy.autoApproveBelowDays = definition.Auto_Approve_Below_Days__c;
-            policy.escalateAboveDays = definition.Escalate_Above_Days__c;
-            policy.escalationTarget = definition.Escalation_Target__c;
-            policy.approvalGroupKey = definition.Approval_Group_Key__c;
-            policy.policyVersion = definition.Policy_Version__c;
-            policyByTypeCode.put(definition.Type_Code__c, policy);
+        for (SObject definitionRecord : queryDefinitionRecordsByTypeCodes(normalizedCodes)) {
+            LeaveTypePolicy policy = buildPolicyFromDefinitionRecord(definitionRecord);
+            if (!String.isBlank(policy.typeCode)) {
+                policyByTypeCode.put(policy.typeCode, policy);
+            }
         }
 
         return policyByTypeCode;
@@ -100,15 +98,11 @@ public without sharing class LeaveTypePolicyService {
             return policyByDefinitionId;
         }
 
-        for (Leave_Type_Definition__c definition : [
-            SELECT Id, Name, Type_Code__c, Is_Active__c, Allow_Carryover__c, Carryover_Limit__c,
-                   Carryover_Expire_Month__c, Carryover_Expire_Day__c, Requires_HR_Approval__c,
-                   Approval_Mode__c, Auto_Approve_Below_Days__c, Escalate_Above_Days__c,
-                   Escalation_Target__c, Approval_Group_Key__c, Policy_Version__c
-            FROM Leave_Type_Definition__c
-            WHERE Id IN :filteredDefinitionIds
-        ]) {
-            policyByDefinitionId.put(definition.Id, buildPolicyFromDefinition(definition));
+        for (SObject definitionRecord : queryDefinitionRecordsByIds(filteredDefinitionIds)) {
+            Id definitionId = toIdValue(getDefinitionFieldValue(definitionRecord, 'Id'));
+            if (definitionId != null) {
+                policyByDefinitionId.put(definitionId, buildPolicyFromDefinitionRecord(definitionRecord));
+            }
         }
         return policyByDefinitionId;
     }
@@ -152,31 +146,221 @@ public without sharing class LeaveTypePolicyService {
         return policy;
     }
 
-    private static LeaveTypePolicy buildPolicyFromDefinition(Leave_Type_Definition__c definition) {
-        LeaveTypePolicy policy = buildDefaultPolicy(definition.Type_Code__c);
-        policy.definitionId = definition.Id;
-        policy.typeCode = definition.Type_Code__c;
-        policy.typeName = definition.Name;
+    private static LeaveTypePolicy buildPolicyFromDefinitionRecord(SObject definitionRecord) {
+        String typeCode = toStringValue(getDefinitionFieldValue(definitionRecord, 'Type_Code__c'));
+        LeaveTypePolicy policy = buildDefaultPolicy(typeCode);
+        policy.definitionId = toIdValue(getDefinitionFieldValue(definitionRecord, 'Id'));
+        policy.typeCode = typeCode;
+        policy.typeName = toStringValue(getDefinitionFieldValue(definitionRecord, 'Name'));
         policy.isDefined = true;
-        policy.isActive = definition.Is_Active__c;
-        policy.allowCarryover = definition.Allow_Carryover__c;
-        policy.carryoverLimit = definition.Carryover_Limit__c;
-        policy.carryoverExpireMonth = toInteger(definition.Carryover_Expire_Month__c);
-        policy.carryoverExpireDay = toInteger(definition.Carryover_Expire_Day__c);
-        policy.requiresHrApproval = definition.Requires_HR_Approval__c;
-        policy.approvalMode = String.isBlank(definition.Approval_Mode__c)
-            ? resolveDefaultApprovalMode(definition.Requires_HR_Approval__c)
-            : definition.Approval_Mode__c;
-        policy.autoApproveBelowDays = definition.Auto_Approve_Below_Days__c;
-        policy.escalateAboveDays = definition.Escalate_Above_Days__c;
-        policy.escalationTarget = definition.Escalation_Target__c;
-        policy.approvalGroupKey = definition.Approval_Group_Key__c;
-        policy.policyVersion = definition.Policy_Version__c;
+        Boolean isActive = toBoolean(getDefinitionFieldValue(definitionRecord, 'Is_Active__c'));
+        if (isActive != null) {
+            policy.isActive = isActive;
+        }
+
+        Boolean allowCarryover = toBoolean(getDefinitionFieldValue(definitionRecord, 'Allow_Carryover__c'));
+        if (allowCarryover != null) {
+            policy.allowCarryover = allowCarryover;
+        }
+
+        Decimal carryoverLimit = toDecimal(getDefinitionFieldValue(definitionRecord, 'Carryover_Limit__c'));
+        if (carryoverLimit != null) {
+            policy.carryoverLimit = carryoverLimit;
+        }
+
+        Integer carryoverExpireMonth = toInteger(
+            toDecimal(getDefinitionFieldValue(definitionRecord, 'Carryover_Expire_Month__c'))
+        );
+        if (carryoverExpireMonth != null) {
+            policy.carryoverExpireMonth = carryoverExpireMonth;
+        }
+
+        Integer carryoverExpireDay = toInteger(
+            toDecimal(getDefinitionFieldValue(definitionRecord, 'Carryover_Expire_Day__c'))
+        );
+        if (carryoverExpireDay != null) {
+            policy.carryoverExpireDay = carryoverExpireDay;
+        }
+
+        Boolean requiresHrApproval = toBoolean(
+            getDefinitionFieldValue(definitionRecord, 'Requires_HR_Approval__c')
+        );
+        if (requiresHrApproval != null) {
+            policy.requiresHrApproval = requiresHrApproval;
+        }
+
+        String approvalMode = toStringValue(getDefinitionFieldValue(definitionRecord, 'Approval_Mode__c'));
+        policy.approvalMode = String.isBlank(approvalMode)
+            ? resolveDefaultApprovalMode(policy.requiresHrApproval)
+            : approvalMode;
+
+        Decimal autoApproveBelowDays = toDecimal(
+            getDefinitionFieldValue(definitionRecord, 'Auto_Approve_Below_Days__c')
+        );
+        if (autoApproveBelowDays != null) {
+            policy.autoApproveBelowDays = autoApproveBelowDays;
+        }
+
+        Decimal escalateAboveDays = toDecimal(
+            getDefinitionFieldValue(definitionRecord, 'Escalate_Above_Days__c')
+        );
+        if (escalateAboveDays != null) {
+            policy.escalateAboveDays = escalateAboveDays;
+        }
+
+        String escalationTarget = toStringValue(
+            getDefinitionFieldValue(definitionRecord, 'Escalation_Target__c')
+        );
+        if (!String.isBlank(escalationTarget)) {
+            policy.escalationTarget = escalationTarget;
+        }
+
+        String approvalGroupKey = toStringValue(
+            getDefinitionFieldValue(definitionRecord, 'Approval_Group_Key__c')
+        );
+        if (!String.isBlank(approvalGroupKey)) {
+            policy.approvalGroupKey = approvalGroupKey;
+        }
+
+        Decimal policyVersion = toDecimal(getDefinitionFieldValue(definitionRecord, 'Policy_Version__c'));
+        if (policyVersion != null) {
+            policy.policyVersion = policyVersion;
+        }
         return policy;
+    }
+
+    private static List<SObject> queryDefinitionRecordsByTypeCodes(Set<String> typeCodes) {
+        if (typeCodes == null || typeCodes.isEmpty()) {
+            return new List<SObject>();
+        }
+
+        return queryDefinitionRecords(
+            'Type_Code__c IN ' + buildSoqlStringInClause(typeCodes)
+        );
+    }
+
+    private static List<SObject> queryDefinitionRecordsByIds(Set<Id> definitionIds) {
+        if (definitionIds == null || definitionIds.isEmpty()) {
+            return new List<SObject>();
+        }
+
+        return queryDefinitionRecords(
+            'Id IN ' + buildSoqlIdInClause(definitionIds)
+        );
+    }
+
+    private static List<SObject> queryDefinitionRecords(String whereClause) {
+        while (true) {
+            String soql = buildDefinitionSelectSoql();
+            if (!String.isBlank(whereClause)) {
+                soql += ' WHERE ' + whereClause;
+            }
+            try {
+                return Database.query(soql);
+            } catch (QueryException ex) {
+                String missingFieldApiName = extractMissingFieldApiName(ex);
+                if (String.isBlank(missingFieldApiName) ||
+                    !POLICY_QUERY_FIELDS.contains(missingFieldApiName) ||
+                    nonQueryableDefinitionFields.contains(missingFieldApiName)) {
+                    throw ex;
+                }
+                nonQueryableDefinitionFields.add(missingFieldApiName);
+            }
+        }
+        return new List<SObject>();
+    }
+
+    private static String buildDefinitionSelectSoql() {
+        List<String> selectFields = new List<String>();
+        for (String fieldApiName : POLICY_QUERY_FIELDS) {
+            if (hasDefinitionField(fieldApiName) &&
+                !nonQueryableDefinitionFields.contains(fieldApiName)) {
+                selectFields.add(fieldApiName);
+            }
+        }
+        if (selectFields.isEmpty()) {
+            selectFields.add('Id');
+        }
+        return 'SELECT ' + String.join(selectFields, ', ') +
+            ' FROM Leave_Type_Definition__c';
+    }
+
+    private static String extractMissingFieldApiName(QueryException ex) {
+        String message = ex == null ? null : ex.getMessage();
+        if (String.isBlank(message)) {
+            return null;
+        }
+
+        String prefix = 'No such column \'';
+        Integer prefixIndex = message.indexOf(prefix);
+        if (prefixIndex < 0) {
+            return null;
+        }
+
+        Integer fieldStartIndex = prefixIndex + prefix.length();
+        Integer fieldEndIndex = message.indexOf('\'', fieldStartIndex);
+        if (fieldEndIndex <= fieldStartIndex) {
+            return null;
+        }
+        return message.substring(fieldStartIndex, fieldEndIndex);
+    }
+
+    private static String buildSoqlStringInClause(Set<String> values) {
+        List<String> orderedValues = new List<String>();
+        for (String value : values) {
+            if (!String.isBlank(value)) {
+                orderedValues.add('\'' + String.escapeSingleQuotes(value) + '\'');
+            }
+        }
+        orderedValues.sort();
+        return '(' + String.join(orderedValues, ', ') + ')';
+    }
+
+    private static String buildSoqlIdInClause(Set<Id> ids) {
+        List<String> orderedIds = new List<String>();
+        for (Id recordId : ids) {
+            if (recordId != null) {
+                orderedIds.add('\'' + String.escapeSingleQuotes(String.valueOf(recordId)) + '\'');
+            }
+        }
+        orderedIds.sort();
+        return '(' + String.join(orderedIds, ', ') + ')';
+    }
+
+    private static Boolean hasDefinitionField(String fieldApiName) {
+        return !String.isBlank(fieldApiName) &&
+            Leave_Type_Definition__c.SObjectType.getDescribe().fields.getMap().containsKey(fieldApiName);
+    }
+
+    private static Object getDefinitionFieldValue(SObject definitionRecord, String fieldApiName) {
+        if (definitionRecord == null || !hasDefinitionField(fieldApiName)) {
+            return null;
+        }
+
+        Map<String, Object> populatedFields = definitionRecord.getPopulatedFieldsAsMap();
+        return populatedFields.containsKey(fieldApiName)
+            ? populatedFields.get(fieldApiName)
+            : null;
     }
 
     private static String resolveDefaultApprovalMode(Boolean requiresHrApproval) {
         return requiresHrApproval ? 'Manager Then HR' : 'Manager Only';
+    }
+
+    private static String toStringValue(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private static Boolean toBoolean(Object value) {
+        return value == null ? null : (Boolean)value;
+    }
+
+    private static Decimal toDecimal(Object value) {
+        return value == null ? null : (Decimal)value;
+    }
+
+    private static Id toIdValue(Object value) {
+        return value == null ? null : (Id)value;
     }
 
     private static Integer toInteger(Decimal value) {

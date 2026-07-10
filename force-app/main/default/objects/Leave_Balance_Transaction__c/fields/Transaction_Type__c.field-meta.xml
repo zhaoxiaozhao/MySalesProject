@@ -49,6 +49,11 @@
                 <default>false</default>
                 <label>Manual Adjust</label>
             </value>
+            <value>
+                <fullName>Reverse_Consume</fullName>
+                <default>false</default>
+                <label>Reverse Consume</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>

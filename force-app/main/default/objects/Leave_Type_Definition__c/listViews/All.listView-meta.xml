@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>All</fullName>
+    <columns>NAME</columns>
+    <columns>Allow_Carryover__c</columns>
+    <columns>Approval_Mode__c</columns>
+    <columns>Auto_Approve_Below_Days__c</columns>
+    <columns>Carryover_Expire_Day__c</columns>
+    <columns>Carryover_Expire_Month__c</columns>
+    <columns>Carryover_Limit__c</columns>
+    <columns>CREATED_DATE</columns>
+    <columns>Escalate_Above_Days__c</columns>
+    <columns>Escalation_Target__c</columns>
+    <columns>Is_Active__c</columns>
+    <columns>Policy_Version__c</columns>
+    <columns>Requires_HR_Approval__c</columns>
+    <filterScope>Everything</filterScope>
+    <label>All</label>
+</ListView>
