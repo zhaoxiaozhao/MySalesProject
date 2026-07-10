@@ -63,6 +63,9 @@
                                             <span class="entry-avatar entry-avatar-fallback">{entry.initials}</span>
                                         </template>
                                         <span class="entry-name">{entry.displayName}</span>
+                                        <template lwc:if={entry.slotTag}>
+                                            <span class="entry-slot">{entry.slotTag}</span>
+                                        </template>
                                     </a>
                                 </template>
                                 <template lwc:if={cell.moreCount}>

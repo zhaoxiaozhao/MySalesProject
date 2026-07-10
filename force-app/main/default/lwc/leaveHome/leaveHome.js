@@ -12,12 +12,22 @@ import cancelLeaveAction from '@salesforce/apex/LeaveHomeController.cancelLeaveA
 import approveLeaveAction from '@salesforce/apex/LeaveHomeController.approveLeaveAction';
 import rejectLeaveAction from '@salesforce/apex/LeaveHomeController.rejectLeaveAction';
 
+const FULL_DAY_TIME_SLOT = 'Full_Day';
+const MORNING_TIME_SLOT = 'Morning';
+const AFTERNOON_TIME_SLOT = 'Afternoon';
+const TIME_SLOT_OPTIONS = [
+    { label: 'Full Day', value: FULL_DAY_TIME_SLOT },
+    { label: 'Morning', value: MORNING_TIME_SLOT },
+    { label: 'Afternoon', value: AFTERNOON_TIME_SLOT },
+];
+
 const EMPLOYEE_COLUMNS = [
     { label: 'Number', fieldName: 'detailUrl', type: 'url',
         typeAttributes: { label: { fieldName: 'Name' }, target: '_self' } },
     { label: 'Type', fieldName: 'Leave_Type_Name__c', type: 'text' },
     { label: 'Start', fieldName: 'Start_Date__c', type: 'date' },
     { label: 'End', fieldName: 'End_Date__c', type: 'date' },
+    { label: 'Time Slot', fieldName: 'TimeSlotLabel', type: 'text' },
     { label: 'Days', fieldName: 'Days__c', type: 'number' },
     { label: 'Status', fieldName: 'Status__c', type: 'text' },
     {
@@ -49,6 +59,7 @@ const MANAGER_COLUMNS = [
     { label: 'Type', fieldName: 'Leave_Type_Name__c', type: 'text' },
     { label: 'Start', fieldName: 'Start_Date__c', type: 'date' },
     { label: 'End', fieldName: 'End_Date__c', type: 'date' },
+    { label: 'Time Slot', fieldName: 'TimeSlotLabel', type: 'text' },
     { label: 'Days', fieldName: 'Days__c', type: 'number' },
     { label: 'Status', fieldName: 'Status__c', type: 'text' },
     {
@@ -80,6 +91,7 @@ const HR_PENDING_COLUMNS = [
     { label: 'Type', fieldName: 'Leave_Type_Name__c', type: 'text' },
     { label: 'Start', fieldName: 'Start_Date__c', type: 'date' },
     { label: 'End', fieldName: 'End_Date__c', type: 'date' },
+    { label: 'Time Slot', fieldName: 'TimeSlotLabel', type: 'text' },
     { label: 'Days', fieldName: 'Days__c', type: 'number' },
     { label: 'Status', fieldName: 'Status__c', type: 'text' },
     {
@@ -117,6 +129,7 @@ export default class LeaveHome extends LightningElement {
     isLoading = false;
     isCreateModalOpen = false;
     leaveTypeOptions = [];
+    timeSlotOptions = TIME_SLOT_OPTIONS;
     newRequestForm = this.buildEmptyRequestForm();
 
     connectedCallback() {
@@ -202,6 +215,8 @@ export default class LeaveHome extends LightningElement {
             leaveTypeDefinitionId: this.newRequestForm.leaveTypeDefinitionId,
             startDate: this.newRequestForm.startDate,
             endDate: this.newRequestForm.endDate,
+            startTimeSlot: this.newRequestForm.startTimeSlot,
+            endTimeSlot: this.newRequestForm.endTimeSlot,
             reason: this.newRequestForm.reason,
         })
             .then(() => {
@@ -320,6 +335,7 @@ export default class LeaveHome extends LightningElement {
         return {
             ...requestRow,
             Leave_Type_Name__c: this.resolveLeaveTypeName(requestRow),
+            TimeSlotLabel: this.resolveTimeSlotLabel(requestRow),
             detailUrl: '/lightning/r/Leave_Request__c/' + requestRow.Id + '/view',
             submitDisabled: requestRow.Status__c !== 'Draft',
             cancelDisabled: !['Draft', 'Submitted', 'Pending_Manager_Approval', 'Pending_HR_Approval']
@@ -335,6 +351,7 @@ export default class LeaveHome extends LightningElement {
             ...requestRow,
             EmployeeName: requestRow.Employee__r ? requestRow.Employee__r.Name : '',
             Leave_Type_Name__c: this.resolveLeaveTypeName(requestRow),
+            TimeSlotLabel: this.resolveTimeSlotLabel(requestRow),
             detailUrl: '/lightning/r/Leave_Request__c/' + requestRow.Id + '/view',
             approveDisabled: !actionableStatuses.includes(requestRow.Status__c),
             rejectDisabled: !actionableStatuses.includes(requestRow.Status__c),
@@ -349,6 +366,33 @@ export default class LeaveHome extends LightningElement {
             return requestRow.Leave_Type_Definition__r.Name;
         }
         return '';
+    }
+
+    resolveTimeSlotLabel(requestRow) {
+        const startSlot = requestRow.Start_Time_Slot__c || FULL_DAY_TIME_SLOT;
+        const endSlot = requestRow.End_Time_Slot__c || FULL_DAY_TIME_SLOT;
+        if (requestRow.Start_Date__c && requestRow.End_Date__c && requestRow.Start_Date__c === requestRow.End_Date__c) {
+            if (startSlot === endSlot && startSlot !== FULL_DAY_TIME_SLOT) {
+                return this.formatTimeSlot(startSlot);
+            }
+            return startSlot === FULL_DAY_TIME_SLOT && endSlot === FULL_DAY_TIME_SLOT
+                ? 'Full Day'
+                : `${this.formatTimeSlot(startSlot)} - ${this.formatTimeSlot(endSlot)}`;
+        }
+        if (startSlot === FULL_DAY_TIME_SLOT && endSlot === FULL_DAY_TIME_SLOT) {
+            return 'Full Day';
+        }
+        return `${this.formatTimeSlot(startSlot)} start / ${this.formatTimeSlot(endSlot)} end`;
+    }
+
+    formatTimeSlot(timeSlot) {
+        if (timeSlot === MORNING_TIME_SLOT) {
+            return 'Morning';
+        }
+        if (timeSlot === AFTERNOON_TIME_SLOT) {
+            return 'Afternoon';
+        }
+        return 'Full Day';
     }
 
     get hasMyRequests() {
@@ -368,6 +412,8 @@ export default class LeaveHome extends LightningElement {
             leaveTypeDefinitionId: null,
             startDate: null,
             endDate: null,
+            startTimeSlot: FULL_DAY_TIME_SLOT,
+            endTimeSlot: FULL_DAY_TIME_SLOT,
             reason: '',
         };
     }

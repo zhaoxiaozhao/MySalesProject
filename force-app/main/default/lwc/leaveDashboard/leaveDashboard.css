@@ -123,6 +123,13 @@
     white-space: nowrap;
 }
 
+.entry-slot {
+    color: #5f6b7a;
+    flex-shrink: 0;
+    font-size: 0.65rem;
+    font-weight: 700;
+}
+
 .entry-more {
     color: #5f6b7a;
     font-size: 0.7rem;

@@ -252,24 +252,45 @@ private class LeaveHomeControllerTest {
         );
         insert inactiveDefinition;
 
-        assertAuraHandledExceptionForCreate(null, Date.today(), Date.today(), 'Missing definition');
+        assertAuraHandledExceptionForCreate(
+            null,
+            Date.today(),
+            Date.today(),
+            'Full_Day',
+            'Full_Day',
+            'Missing definition'
+        );
         assertAuraHandledExceptionForCreate(
             inactiveDefinition.Id,
             null,
             Date.today(),
+            'Full_Day',
+            'Full_Day',
             'Missing start date'
         );
         assertAuraHandledExceptionForCreate(
             inactiveDefinition.Id,
             Date.today().addDays(2),
             Date.today().addDays(1),
+            'Full_Day',
+            'Full_Day',
             'Inverted date range'
         );
         assertAuraHandledExceptionForCreate(
             inactiveDefinition.Id,
             Date.today().addDays(1),
             Date.today().addDays(2),
+            'Full_Day',
+            'Full_Day',
             'Inactive definition'
+        );
+        assertAuraHandledExceptionForCreate(
+            inactiveDefinition.Id,
+            Date.today().addDays(1),
+            Date.today().addDays(1),
+            'Afternoon',
+            'Morning',
+            'Invalid same-day slots'
         );
     }
 
@@ -285,13 +306,16 @@ private class LeaveHomeControllerTest {
             annualDefinition.Id,
             Date.today().addDays(2),
             Date.today().addDays(4),
+            'Afternoon',
+            'Morning',
             'Family trip'
         );
         Test.stopTest();
 
         Leave_Request__c requestRecord = [
             SELECT Employee__c, Leave_Type_Definition__c, Leave_Type_Code__c,
-                   Leave_Type_Name__c, Status__c, Days__c, Reason__c
+                   Leave_Type_Name__c, Status__c, Days__c, Reason__c,
+                   Start_Time_Slot__c, End_Time_Slot__c
             FROM Leave_Request__c
             WHERE Id = :requestId
         ];
@@ -301,7 +325,9 @@ private class LeaveHomeControllerTest {
         Assert.areEqual('ANNUAL', requestRecord.Leave_Type_Code__c);
         Assert.areEqual('Annual Leave Policy', requestRecord.Leave_Type_Name__c);
         Assert.areEqual('Draft', requestRecord.Status__c);
-        Assert.areEqual(3, requestRecord.Days__c);
+        Assert.areEqual(2, requestRecord.Days__c);
+        Assert.areEqual('Afternoon', requestRecord.Start_Time_Slot__c);
+        Assert.areEqual('Morning', requestRecord.End_Time_Slot__c);
         Assert.areEqual('Family trip', requestRecord.Reason__c);
     }
 
@@ -559,6 +585,8 @@ private class LeaveHomeControllerTest {
                 studyDefinition.Id,
                 Date.today().addDays(1),
                 Date.today().addDays(1),
+                'Full_Day',
+                'Full_Day',
                 'Training'
             );
             Assert.fail('Unsupported definition should be blocked.');
@@ -614,6 +642,8 @@ private class LeaveHomeControllerTest {
         Id leaveTypeDefinitionId,
         Date startDate,
         Date endDate,
+        String startTimeSlot,
+        String endTimeSlot,
         String scenarioLabel
     ) {
         Boolean blocked = false;
@@ -622,6 +652,8 @@ private class LeaveHomeControllerTest {
                 leaveTypeDefinitionId,
                 startDate,
                 endDate,
+                startTimeSlot,
+                endTimeSlot,
                 scenarioLabel
             );
             Assert.fail('Create request should be blocked for scenario: ' + scenarioLabel);

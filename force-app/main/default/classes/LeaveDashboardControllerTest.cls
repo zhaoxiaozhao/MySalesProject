@@ -18,6 +18,8 @@ private class LeaveDashboardControllerTest {
                 Leave_Type_Definition__c = definitionRecord.Id,
                 Start_Date__c = Date.today().toStartOfMonth().addDays(2),
                 End_Date__c = Date.today().toStartOfMonth().addDays(3),
+                Start_Time_Slot__c = 'Afternoon',
+                End_Time_Slot__c = 'Morning',
                 Status__c = 'Approved',
                 Balance_Deducted__c = true,
                 Reason__c = 'Self request'
@@ -41,6 +43,8 @@ private class LeaveDashboardControllerTest {
             Assert.areEqual('MY', payload.scopeLabel);
             Assert.areEqual(1, payload.entries.size());
             Assert.areEqual(employee.Id, payload.entries[0].employeeId);
+            Assert.areEqual('Afternoon', payload.entries[0].startTimeSlot);
+            Assert.areEqual('Morning', payload.entries[0].endTimeSlot);
         }
     }
 

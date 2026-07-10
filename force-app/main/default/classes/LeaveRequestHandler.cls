@@ -8,9 +8,8 @@ public without sharing class LeaveRequestHandler {
             if (req.Employee__c == null) {
                 req.Employee__c = UserInfo.getUserId();
             }
-            if (req.Start_Date__c != null && req.End_Date__c != null) {
-                req.Days__c = req.Start_Date__c.daysBetween(req.End_Date__c) + 1;
-            }
+            applyDefaultTimeSlots(req);
+            applyDurationSnapshot(req);
             if (req.Start_Date__c != null) {
                 req.Balance_Year__c = req.Start_Date__c.year();
             }
@@ -30,9 +29,13 @@ public without sharing class LeaveRequestHandler {
                 applyLeaveTypeSnapshot(req, policyByDefinitionId);
             }
 
+            applyDefaultTimeSlots(req);
             if (req.Start_Date__c != null && req.End_Date__c != null
-                    && (req.Start_Date__c != old.Start_Date__c || req.End_Date__c != old.End_Date__c)) {
-                req.Days__c = req.Start_Date__c.daysBetween(req.End_Date__c) + 1;
+                    && (req.Start_Date__c != old.Start_Date__c ||
+                        req.End_Date__c != old.End_Date__c ||
+                        req.get('Start_Time_Slot__c') != old.get('Start_Time_Slot__c') ||
+                        req.get('End_Time_Slot__c') != old.get('End_Time_Slot__c'))) {
+                applyDurationSnapshot(req);
             }
             if (req.Start_Date__c != old.Start_Date__c && req.Start_Date__c != null) {
                 req.Balance_Year__c = req.Start_Date__c.year();
@@ -73,7 +76,14 @@ public without sharing class LeaveRequestHandler {
 
             req.Submitted_Time__c = System.now();
 
-            if (LeaveService.hasOverlappingDates(req.Employee__c, req.Start_Date__c, req.End_Date__c, req.Id)) {
+            if (LeaveService.hasOverlappingDates(
+                req.Employee__c,
+                req.Start_Date__c,
+                req.End_Date__c,
+                (String)req.get('Start_Time_Slot__c'),
+                (String)req.get('End_Time_Slot__c'),
+                req.Id
+            )) {
                 req.addError('You already have an active leave request in this date range.');
                 continue;
             }
@@ -86,6 +96,8 @@ public without sharing class LeaveRequestHandler {
                     req.Leave_Type_Code__c,
                     req.Start_Date__c,
                     req.End_Date__c,
+                    (String)req.get('Start_Time_Slot__c'),
+                    (String)req.get('End_Time_Slot__c'),
                     req.Id
                 );
                 applyApprovalRouting(req, policyByDefinitionId);
@@ -105,6 +117,8 @@ public without sharing class LeaveRequestHandler {
             Leave_Request__c old = oldMap.get(req.Id);
             if (req.Start_Date__c != old.Start_Date__c ||
                 req.End_Date__c != old.End_Date__c ||
+                req.get('Start_Time_Slot__c') != old.get('Start_Time_Slot__c') ||
+                req.get('End_Time_Slot__c') != old.get('End_Time_Slot__c') ||
                 req.Leave_Type_Definition__c != old.Leave_Type_Definition__c ||
                 req.Status__c != old.Status__c) {
                 requestsToSyncSegments.add(req);
@@ -208,6 +222,30 @@ public without sharing class LeaveRequestHandler {
         return old.Status__c == 'Draft'
             && (req.Status__c == 'Submitted' || req.Status__c == 'Pending_Manager_Approval'
                 || req.Status__c == 'Pending_HR_Approval' || req.Status__c == 'Approved');
+    }
+
+    private static void applyDefaultTimeSlots(Leave_Request__c req) {
+        if (req == null) {
+            return;
+        }
+        if (req.Start_Date__c != null && req.get('Start_Time_Slot__c') == null) {
+            req.put('Start_Time_Slot__c', LeaveRequestSegmentService.FULL_DAY_TIME_SLOT);
+        }
+        if (req.End_Date__c != null && req.get('End_Time_Slot__c') == null) {
+            req.put('End_Time_Slot__c', LeaveRequestSegmentService.FULL_DAY_TIME_SLOT);
+        }
+    }
+
+    private static void applyDurationSnapshot(Leave_Request__c req) {
+        if (req == null || req.Start_Date__c == null || req.End_Date__c == null) {
+            return;
+        }
+        req.Days__c = LeaveRequestSegmentService.calculateDays(
+            req.Start_Date__c,
+            req.End_Date__c,
+            (String)req.get('Start_Time_Slot__c'),
+            (String)req.get('End_Time_Slot__c')
+        );
     }
 
     private static Map<Id, LeaveTypePolicyService.LeaveTypePolicy> getPoliciesByDefinitionId(

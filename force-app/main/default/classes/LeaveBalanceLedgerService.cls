@@ -28,8 +28,36 @@ public without sharing class LeaveBalanceLedgerService {
         Date endDate,
         Id excludeRequestId
     ) {
+        validateBalance(
+            employeeId,
+            leaveTypeDefinitionId,
+            leaveTypeCode,
+            startDate,
+            endDate,
+            null,
+            null,
+            excludeRequestId
+        );
+    }
+
+    public static void validateBalance(
+        Id employeeId,
+        Id leaveTypeDefinitionId,
+        String leaveTypeCode,
+        Date startDate,
+        Date endDate,
+        String startTimeSlot,
+        String endTimeSlot,
+        Id excludeRequestId
+    ) {
         List<LeaveRequestSegmentService.SegmentDetail> segments =
-            LeaveRequestSegmentService.buildSegments(startDate, endDate, leaveTypeDefinitionId);
+            LeaveRequestSegmentService.buildSegments(
+                startDate,
+                endDate,
+                leaveTypeDefinitionId,
+                startTimeSlot,
+                endTimeSlot
+            );
         if (segments.isEmpty()) {
             return;
         }
@@ -806,12 +834,14 @@ public without sharing class LeaveBalanceLedgerService {
         RequestContext context = new RequestContext();
         context.requestRecord = [
             SELECT Id, Employee__c, Leave_Type_Definition__c, Leave_Type_Code__c,
-                   Start_Date__c, End_Date__c, Status__c, Balance_Deducted__c
+                   Start_Date__c, End_Date__c, Start_Time_Slot__c, End_Time_Slot__c,
+                   Status__c, Balance_Deducted__c
             FROM Leave_Request__c
             WHERE Id = :leaveRequestId
         ];
         context.segments = [
-            SELECT Id, Balance_Year__c, Days__c, Segment_Start_Date__c, Segment_Status__c, Unique_Key__c
+            SELECT Id, Balance_Year__c, Days__c, Segment_Start_Date__c, Segment_Status__c, Unique_Key__c,
+                   Segment_Start_Time_Slot__c, Segment_End_Time_Slot__c
             FROM Leave_Request_Segment__c
             WHERE Leave_Request__c = :leaveRequestId
             ORDER BY Segment_Start_Date__c
@@ -821,7 +851,8 @@ public without sharing class LeaveBalanceLedgerService {
             && context.requestRecord.End_Date__c != null) {
             LeaveRequestSegmentService.syncSegments(new List<Leave_Request__c>{ context.requestRecord });
             context.segments = [
-                SELECT Id, Balance_Year__c, Days__c, Segment_Start_Date__c, Segment_Status__c, Unique_Key__c
+                SELECT Id, Balance_Year__c, Days__c, Segment_Start_Date__c, Segment_Status__c, Unique_Key__c,
+                       Segment_Start_Time_Slot__c, Segment_End_Time_Slot__c
                 FROM Leave_Request_Segment__c
                 WHERE Leave_Request__c = :leaveRequestId
                 ORDER BY Segment_Start_Date__c
@@ -1272,7 +1303,7 @@ public without sharing class LeaveBalanceLedgerService {
         }
 
         for (Leave_Request__c existingRequest : [
-            SELECT Start_Date__c, End_Date__c
+            SELECT Start_Date__c, End_Date__c, Start_Time_Slot__c, End_Time_Slot__c
             FROM Leave_Request__c
             WHERE Employee__c = :employeeId
             AND Leave_Type_Code__c = :leaveTypeCode
@@ -1282,7 +1313,9 @@ public without sharing class LeaveBalanceLedgerService {
             Map<Integer, Decimal> existingDaysByYear =
                 LeaveRequestSegmentService.summarizeDaysByYear(
                     existingRequest.Start_Date__c,
-                    existingRequest.End_Date__c
+                    existingRequest.End_Date__c,
+                    (String)existingRequest.get('Start_Time_Slot__c'),
+                    (String)existingRequest.get('End_Time_Slot__c')
                 );
             for (Integer yearValue : existingDaysByYear.keySet()) {
                 Decimal accumulated = daysByYear.containsKey(yearValue)

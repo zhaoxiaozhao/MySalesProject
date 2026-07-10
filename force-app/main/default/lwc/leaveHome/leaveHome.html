@@ -92,7 +92,7 @@
 
             <template if:true={error}>
                 <div class="slds-notify slds-notify_alert slds-theme_error slds-m-top_small" role="alert">
-                    <span class="slds-notify__content">{error}</span>
+                    <span>{error}</span>
                 </div>
             </template>
         </div>
@@ -132,6 +132,24 @@
                         onchange={handleCreateFieldChange}
                         required>
                     </lightning-input>
+                    <lightning-combobox
+                        class="slds-m-top_small"
+                        name="startTimeSlot"
+                        label="Start Time Slot"
+                        value={newRequestForm.startTimeSlot}
+                        options={timeSlotOptions}
+                        onchange={handleCreateFieldChange}
+                        required>
+                    </lightning-combobox>
+                    <lightning-combobox
+                        class="slds-m-top_small"
+                        name="endTimeSlot"
+                        label="End Time Slot"
+                        value={newRequestForm.endTimeSlot}
+                        options={timeSlotOptions}
+                        onchange={handleCreateFieldChange}
+                        required>
+                    </lightning-combobox>
                     <lightning-textarea
                         class="slds-m-top_small"
                         name="reason"

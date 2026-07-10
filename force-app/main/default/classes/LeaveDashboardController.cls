@@ -33,7 +33,7 @@ public with sharing class LeaveDashboardController {
 
         List<Leave_Request__c> requestRecords = [
             SELECT Id, Name, Employee__c, Employee__r.Name, Employee__r.SmallPhotoUrl,
-                   Start_Date__c, End_Date__c, Status__c
+                   Start_Date__c, End_Date__c, Start_Time_Slot__c, End_Time_Slot__c, Status__c
             FROM Leave_Request__c
             WHERE Status__c IN :ACTIVE_STATUSES
             AND Start_Date__c <= :monthEndDate
@@ -60,6 +60,8 @@ public with sharing class LeaveDashboardController {
             entry.employeePhotoUrl = requestRecord.Employee__r == null ? null : requestRecord.Employee__r.SmallPhotoUrl;
             entry.startDate = requestRecord.Start_Date__c;
             entry.endDate = requestRecord.End_Date__c;
+            entry.startTimeSlot = (String)requestRecord.get('Start_Time_Slot__c');
+            entry.endTimeSlot = (String)requestRecord.get('End_Time_Slot__c');
             entry.status = requestRecord.Status__c;
             entry.detailUrl = '/lightning/r/Leave_Request__c/' + requestRecord.Id + '/view';
             payload.entries.add(entry);
@@ -114,6 +116,8 @@ public with sharing class LeaveDashboardController {
         @AuraEnabled public String employeePhotoUrl;
         @AuraEnabled public Date startDate;
         @AuraEnabled public Date endDate;
+        @AuraEnabled public String startTimeSlot;
+        @AuraEnabled public String endTimeSlot;
         @AuraEnabled public String status;
         @AuraEnabled public String detailUrl;
     }

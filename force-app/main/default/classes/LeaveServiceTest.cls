@@ -932,6 +932,42 @@ private class LeaveServiceTest {
         Assert.areEqual(false, excludesCurrentRequest, 'Excluded request should not block itself.');
     }
 
+    @IsTest
+    static void testHasOverlappingDatesAllowsMorningAndAfternoonOnSameDay() {
+        User employee = createEmployeeUser('overlaphalf');
+
+        insert new Leave_Request__c(
+            Employee__c = employee.Id,
+            Leave_Type_Definition__c = createLeaveTypeDefinition('ANNUAL', 'Annual Half Day Policy', true, 'Manager Only').Id,
+            Start_Date__c = Date.today().addDays(6),
+            End_Date__c = Date.today().addDays(6),
+            Start_Time_Slot__c = 'Morning',
+            End_Time_Slot__c = 'Morning',
+            Status__c = 'Approved',
+            Balance_Deducted__c = false
+        );
+
+        Boolean overlapsAfternoon = LeaveService.hasOverlappingDates(
+            employee.Id,
+            Date.today().addDays(6),
+            Date.today().addDays(6),
+            'Afternoon',
+            'Afternoon',
+            null
+        );
+        Boolean overlapsMorning = LeaveService.hasOverlappingDates(
+            employee.Id,
+            Date.today().addDays(6),
+            Date.today().addDays(6),
+            'Morning',
+            'Morning',
+            null
+        );
+
+        Assert.areEqual(false, overlapsAfternoon, 'Different half-day slots on the same date should not overlap.');
+        Assert.areEqual(true, overlapsMorning, 'The same half-day slot should still be treated as overlapping.');
+    }
+
     private static User createEmployeeUser(String key) {
         User currentUser = [
             SELECT ProfileId

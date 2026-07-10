@@ -32,6 +32,8 @@ public with sharing class LeaveHomeController {
                 'Leave_Type_Definition__r.Name',
                 'Start_Date__c',
                 'End_Date__c',
+                'Start_Time_Slot__c',
+                'End_Time_Slot__c',
                 'Days__c',
                 'Status__c',
                 'Submitted_Time__c',
@@ -61,6 +63,8 @@ public with sharing class LeaveHomeController {
                 'Leave_Type_Definition__r.Name',
                 'Start_Date__c',
                 'End_Date__c',
+                'Start_Time_Slot__c',
+                'End_Time_Slot__c',
                 'Days__c',
                 'Status__c',
                 'Employee__c',
@@ -99,6 +103,8 @@ public with sharing class LeaveHomeController {
                 'Leave_Type_Definition__r.Name',
                 'Start_Date__c',
                 'End_Date__c',
+                'Start_Time_Slot__c',
+                'End_Time_Slot__c',
                 'Days__c',
                 'Status__c',
                 'Employee__c',
@@ -122,6 +128,8 @@ public with sharing class LeaveHomeController {
                 'Leave_Type_Definition__r.Name',
                 'Start_Date__c',
                 'End_Date__c',
+                'Start_Time_Slot__c',
+                'End_Time_Slot__c',
                 'Days__c',
                 'Status__c',
                 'Employee__c',
@@ -165,6 +173,8 @@ public with sharing class LeaveHomeController {
         Id leaveTypeDefinitionId,
         Date startDate,
         Date endDate,
+        String startTimeSlot,
+        String endTimeSlot,
         String reason
     ) {
         if (leaveTypeDefinitionId == null) {
@@ -175,6 +185,11 @@ public with sharing class LeaveHomeController {
         }
         if (endDate < startDate) {
             throw new AuraHandledException('End date cannot be earlier than start date.');
+        }
+        try {
+            LeaveRequestSegmentService.calculateDays(startDate, endDate, startTimeSlot, endTimeSlot);
+        } catch (IllegalArgumentException ex) {
+            throw new AuraHandledException(ex.getMessage());
         }
 
         Leave_Type_Definition__c definitionRecord;
@@ -203,6 +218,12 @@ public with sharing class LeaveHomeController {
             Leave_Type_Definition__c = leaveTypeDefinitionId,
             Start_Date__c = startDate,
             End_Date__c = endDate,
+            Start_Time_Slot__c = String.isBlank(startTimeSlot)
+                ? LeaveRequestSegmentService.FULL_DAY_TIME_SLOT
+                : startTimeSlot,
+            End_Time_Slot__c = String.isBlank(endTimeSlot)
+                ? LeaveRequestSegmentService.FULL_DAY_TIME_SLOT
+                : endTimeSlot,
             Status__c = 'Draft',
             Balance_Deducted__c = false,
             Reason__c = reason

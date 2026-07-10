@@ -2,6 +2,9 @@ import { LightningElement, track } from 'lwc';
 import getCalendar from '@salesforce/apex/LeaveDashboardController.getCalendar';
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const FULL_DAY_TIME_SLOT = 'Full_Day';
+const MORNING_TIME_SLOT = 'Morning';
+const AFTERNOON_TIME_SLOT = 'Afternoon';
 const STATUS_CLASS_MAP = {
     Approved: 'entry entry-approved',
     Submitted: 'entry entry-submitted',
@@ -95,9 +98,12 @@ export default class LeaveDashboard extends LightningElement {
             const cellDate = new Date(gridStartDate);
             cellDate.setDate(gridStartDate.getDate() + index);
             const cellIsoDate = this.toIsoDate(cellDate);
-            const matchingEntries = entries.filter((entry) =>
-                entry.startDate <= cellIsoDate && entry.endDate >= cellIsoDate
-            );
+            const matchingEntries = entries
+                .filter((entry) => entry.startDate <= cellIsoDate && entry.endDate >= cellIsoDate)
+                .map((entry) => ({
+                    ...entry,
+                    slotTag: this.resolveSlotTag(entry, cellIsoDate),
+                }));
 
             cells.push({
                 key: cellIsoDate,
@@ -145,6 +151,30 @@ export default class LeaveDashboard extends LightningElement {
             return parts[0].substring(0, 1).toUpperCase();
         }
         return (parts[0].substring(0, 1) + parts[parts.length - 1].substring(0, 1)).toUpperCase();
+    }
+
+    resolveSlotTag(entry, cellIsoDate) {
+        if (!entry) {
+            return '';
+        }
+        const startSlot = entry.startTimeSlot || FULL_DAY_TIME_SLOT;
+        const endSlot = entry.endTimeSlot || FULL_DAY_TIME_SLOT;
+        if (entry.startDate === entry.endDate && entry.startDate === cellIsoDate) {
+            if (startSlot === MORNING_TIME_SLOT && endSlot === MORNING_TIME_SLOT) {
+                return 'AM';
+            }
+            if (startSlot === AFTERNOON_TIME_SLOT && endSlot === AFTERNOON_TIME_SLOT) {
+                return 'PM';
+            }
+            return '';
+        }
+        if (entry.startDate === cellIsoDate && startSlot === AFTERNOON_TIME_SLOT) {
+            return 'PM';
+        }
+        if (entry.endDate === cellIsoDate && endSlot === MORNING_TIME_SLOT) {
+            return 'AM';
+        }
+        return '';
     }
 
     toMonthStart(dateValue) {

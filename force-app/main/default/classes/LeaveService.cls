@@ -163,15 +163,41 @@ public without sharing class LeaveService {
     }
 
     public static Boolean hasOverlappingDates(Id employeeId, Date startDate, Date endDate, Id excludeRequestId) {
+        return hasOverlappingDates(employeeId, startDate, endDate, null, null, excludeRequestId);
+    }
+
+    public static Boolean hasOverlappingDates(
+        Id employeeId,
+        Date startDate,
+        Date endDate,
+        String startTimeSlot,
+        String endTimeSlot,
+        Id excludeRequestId
+    ) {
         List<Leave_Request__c> overlaps = [
-            SELECT Id FROM Leave_Request__c
+            SELECT Id, Start_Date__c, End_Date__c, Start_Time_Slot__c, End_Time_Slot__c
+            FROM Leave_Request__c
             WHERE Employee__c = :employeeId
             AND Start_Date__c <= :endDate
             AND End_Date__c >= :startDate
             AND Id != :excludeRequestId
             AND Status__c IN ('Submitted', 'Pending_Manager_Approval', 'Pending_HR_Approval', 'Approved')
         ];
-        return !overlaps.isEmpty();
+        for (Leave_Request__c existingRequest : overlaps) {
+            if (LeaveRequestSegmentService.hasOverlappingRange(
+                startDate,
+                endDate,
+                startTimeSlot,
+                endTimeSlot,
+                existingRequest.Start_Date__c,
+                existingRequest.End_Date__c,
+                (String)existingRequest.get('Start_Time_Slot__c'),
+                (String)existingRequest.get('End_Time_Slot__c')
+            )) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static void validateBalance(
@@ -182,12 +208,27 @@ public without sharing class LeaveService {
         Date endDate,
         Id excludeRequestId
     ) {
+        validateBalance(employeeId, leaveTypeCode, days, startDate, endDate, null, null, excludeRequestId);
+    }
+
+    public static void validateBalance(
+        Id employeeId,
+        String leaveTypeCode,
+        Decimal days,
+        Date startDate,
+        Date endDate,
+        String startTimeSlot,
+        String endTimeSlot,
+        Id excludeRequestId
+    ) {
         LeaveBalanceLedgerService.validateBalance(
             employeeId,
             null,
             leaveTypeCode,
             startDate,
             endDate,
+            startTimeSlot,
+            endTimeSlot,
             excludeRequestId
         );
     }

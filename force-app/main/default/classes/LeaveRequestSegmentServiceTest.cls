@@ -22,6 +22,26 @@ private class LeaveRequestSegmentServiceTest {
     }
 
     @IsTest
+    static void testBuildSegmentsSupportsHalfDayAcrossYearBoundary() {
+        List<LeaveRequestSegmentService.SegmentDetail> segments =
+            LeaveRequestSegmentService.buildSegments(
+                Date.newInstance(2026, 12, 31),
+                Date.newInstance(2027, 1, 1),
+                null,
+                LeaveRequestSegmentService.AFTERNOON_TIME_SLOT,
+                LeaveRequestSegmentService.MORNING_TIME_SLOT
+            );
+
+        Assert.areEqual(2, segments.size());
+        Assert.areEqual(0.5, segments[0].days);
+        Assert.areEqual('Afternoon', segments[0].startTimeSlot);
+        Assert.areEqual('Full_Day', segments[0].endTimeSlot);
+        Assert.areEqual(0.5, segments[1].days);
+        Assert.areEqual('Full_Day', segments[1].startTimeSlot);
+        Assert.areEqual('Morning', segments[1].endTimeSlot);
+    }
+
+    @IsTest
     static void testCrossYearValidationAndSegmentCreation() {
         User employee = createEmployeeUser('segmentsubmit');
         Leave_Type_Definition__c annualDefinition = createAnnualDefinition();
