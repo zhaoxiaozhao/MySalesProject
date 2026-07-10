@@ -5,8 +5,6 @@ import getMyBalance from '@salesforce/apex/LeaveHomeController.getMyBalance';
 import getMyRequests from '@salesforce/apex/LeaveHomeController.getMyRequests';
 import getPendingApprovals from '@salesforce/apex/LeaveHomeController.getPendingApprovals';
 import getHrPendingApprovals from '@salesforce/apex/LeaveHomeController.getHrPendingApprovals';
-import getAllRequests from '@salesforce/apex/LeaveHomeController.getAllRequests';
-import getAllBalances from '@salesforce/apex/LeaveHomeController.getAllBalances';
 import getAvailableLeaveTypes from '@salesforce/apex/LeaveHomeController.getAvailableLeaveTypes';
 import createLeaveRequest from '@salesforce/apex/LeaveHomeController.createLeaveRequest';
 import submitLeaveAction from '@salesforce/apex/LeaveHomeController.submitLeaveAction';
@@ -75,17 +73,6 @@ const MANAGER_COLUMNS = [
     },
 ];
 
-const HR_COLUMNS = [
-    { label: 'Number', fieldName: 'detailUrl', type: 'url',
-        typeAttributes: { label: { fieldName: 'Name' }, target: '_self' } },
-    { label: 'Employee', fieldName: 'EmployeeName', type: 'text' },
-    { label: 'Type', fieldName: 'Leave_Type_Name__c', type: 'text' },
-    { label: 'Start', fieldName: 'Start_Date__c', type: 'date' },
-    { label: 'End', fieldName: 'End_Date__c', type: 'date' },
-    { label: 'Days', fieldName: 'Days__c', type: 'number' },
-    { label: 'Status', fieldName: 'Status__c', type: 'text' },
-];
-
 const HR_PENDING_COLUMNS = [
     { label: 'Number', fieldName: 'detailUrl', type: 'url',
         typeAttributes: { label: { fieldName: 'Name' }, target: '_self' } },
@@ -117,30 +104,15 @@ const HR_PENDING_COLUMNS = [
     },
 ];
 
-const BALANCE_COLUMNS = [
-    { label: 'Number', fieldName: 'name', type: 'text' },
-    { label: 'User', fieldName: 'userName', type: 'text' },
-    { label: 'Year', fieldName: 'yearValue', type: 'number' },
-    { label: 'Annual Total', fieldName: 'annualTotalAvailable', type: 'number' },
-    { label: 'Carryover', fieldName: 'carryoverAnnualLeave', type: 'number' },
-    { label: 'Carryover Expiry', fieldName: 'carryoverExpiryDate', type: 'date' },
-    { label: 'Sick', fieldName: 'sickLeave', type: 'number' },
-    { label: 'Personal', fieldName: 'personalLeave', type: 'number' },
-];
-
 export default class LeaveHome extends LightningElement {
     employeeColumns = EMPLOYEE_COLUMNS;
     managerColumns = MANAGER_COLUMNS;
-    hrColumns = HR_COLUMNS;
     hrPendingColumns = HR_PENDING_COLUMNS;
-    balanceColumns = BALANCE_COLUMNS;
     roles = {};
     balance;
     myRequests = [];
     pendingApprovals = [];
     hrPendingApprovals = [];
-    allRequests = [];
-    allBalances = [];
     error;
     isLoading = false;
     isCreateModalOpen = false;
@@ -197,14 +169,10 @@ export default class LeaveHome extends LightningElement {
     }
 
     loadHRData() {
-        return Promise.all([getHrPendingApprovals(), getAllRequests(), getAllBalances()])
-            .then(([hrPendingData, allRequestData, allBalanceData]) => {
+        return getHrPendingApprovals()
+            .then((hrPendingData) => {
                 const pendingRows = hrPendingData || [];
-                const requestRows = allRequestData || [];
-                const balanceRows = allBalanceData || [];
                 this.hrPendingApprovals = pendingRows.map((r) => this.mapApprovalRequest(r, 'Pending_HR_Approval'));
-                this.allRequests = requestRows.map((r) => this.mapRequestWithEmployee(r));
-                this.allBalances = balanceRows.map((b) => this.mapBalanceRow(b));
             })
             .catch((err) => { this.error = this.reduceError(err); });
     }
@@ -373,15 +341,6 @@ export default class LeaveHome extends LightningElement {
         };
     }
 
-    mapRequestWithEmployee(requestRow) {
-        return {
-            ...requestRow,
-            EmployeeName: requestRow.Employee__r ? requestRow.Employee__r.Name : '',
-            Leave_Type_Name__c: this.resolveLeaveTypeName(requestRow),
-            detailUrl: '/lightning/r/Leave_Request__c/' + requestRow.Id + '/view',
-        };
-    }
-
     resolveLeaveTypeName(requestRow) {
         if (requestRow.Leave_Type_Name__c) {
             return requestRow.Leave_Type_Name__c;
@@ -390,13 +349,6 @@ export default class LeaveHome extends LightningElement {
             return requestRow.Leave_Type_Definition__r.Name;
         }
         return '';
-    }
-
-    mapBalanceRow(balanceRow) {
-        return {
-            ...balanceRow,
-            userName: balanceRow.userName ? balanceRow.userName : '',
-        };
     }
 
     get hasMyRequests() {
@@ -409,14 +361,6 @@ export default class LeaveHome extends LightningElement {
 
     get hasHrPendingApprovals() {
         return this.hrPendingApprovals.length > 0;
-    }
-
-    get hasAllRequests() {
-        return this.allRequests.length > 0;
-    }
-
-    get hasAllBalances() {
-        return this.allBalances.length > 0;
     }
 
     buildEmptyRequestForm() {

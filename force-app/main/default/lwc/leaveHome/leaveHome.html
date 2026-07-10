@@ -88,26 +88,6 @@
                         <p class="slds-text-color_weak">No HR approvals pending.</p>
                     </template>
                 </div>
-                <div class="slds-m-top_large">
-                    <h3 class="slds-section__title">All Leave Balances</h3>
-                    <template if:true={hasAllBalances}>
-                        <lightning-datatable key-field="Id" data={allBalances} columns={balanceColumns}>
-                        </lightning-datatable>
-                    </template>
-                    <template if:false={hasAllBalances}>
-                        <p class="slds-text-color_weak">No leave balances found.</p>
-                    </template>
-                </div>
-                <div class="slds-m-top_large">
-                    <h3 class="slds-section__title">All Leave Requests</h3>
-                    <template if:true={hasAllRequests}>
-                        <lightning-datatable key-field="Id" data={allRequests} columns={hrColumns}>
-                        </lightning-datatable>
-                    </template>
-                    <template if:false={hasAllRequests}>
-                        <p class="slds-text-color_weak">No leave requests found.</p>
-                    </template>
-                </div>
             </template>
 
             <template if:true={error}>

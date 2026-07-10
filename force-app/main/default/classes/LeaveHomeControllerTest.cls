@@ -61,6 +61,9 @@ private class LeaveHomeControllerTest {
 
             Assert.areEqual(1, hrPending.size());
             Assert.areEqual(pendingHr.Id, hrPending[0].Id);
+            Assert.areEqual(employee.Id, hrPending[0].Employee__c);
+            Assert.areEqual('Home', getRelatedName(hrPending[0], 'Employee__c'));
+            Assert.areEqual('Annual Leave Policy', getLeaveTypeName(hrPending[0]));
         }
     }
 
@@ -121,6 +124,11 @@ private class LeaveHomeControllerTest {
 
             Assert.areEqual(true, roleInfo.isManager);
             Assert.isNotNull(pendingApprovals);
+            if (!pendingApprovals.isEmpty()) {
+                Assert.areEqual(employee.Id, pendingApprovals[0].Employee__c);
+                Assert.areEqual('Home', getRelatedName(pendingApprovals[0], 'Employee__c'));
+                Assert.areEqual('Annual Leave Policy', getLeaveTypeName(pendingApprovals[0]));
+            }
         }
     }
 
@@ -160,10 +168,16 @@ private class LeaveHomeControllerTest {
             Assert.isNotNull(myBalance);
             Assert.areEqual(hrUser.Id, myBalance.userId);
             Assert.areEqual(12, myBalance.annualTotalAvailable);
+            Assert.areEqual(6, myBalance.sickLeave);
+            Assert.areEqual(3, myBalance.personalLeave);
             Assert.areEqual(1, allBalances.size());
             Assert.areEqual(hrUser.Id, allBalances[0].userId);
+            Assert.areEqual(6, allBalances[0].sickLeave);
+            Assert.areEqual(3, allBalances[0].personalLeave);
             Assert.areEqual(1, allRequests.size());
             Assert.areEqual(employee.Id, allRequests[0].Employee__c);
+            Assert.areEqual('Home', getRelatedName(allRequests[0], 'Employee__c'));
+            Assert.areEqual('Annual Leave Policy', getLeaveTypeName(allRequests[0]));
         }
     }
 
@@ -292,7 +306,7 @@ private class LeaveHomeControllerTest {
     }
 
     @IsTest
-    static void testGetMyRequestsReturnsNewestDraftFirst() {
+    static void testGetMyRequestsReturnsNewestInFlightRequestsOnly() {
         Leave_Type_Definition__c annualDefinition = createLeaveTypeDefinition(
             'ANNUAL',
             'Annual Leave Policy'
@@ -322,6 +336,18 @@ private class LeaveHomeControllerTest {
         insert secondRequest;
         Test.setCreatedDate(secondRequest.Id, DateTime.now());
 
+        Leave_Request__c approvedRequest = new Leave_Request__c(
+            Employee__c = UserInfo.getUserId(),
+            Leave_Type_Definition__c = annualDefinition.Id,
+            Start_Date__c = Date.today().addDays(8),
+            End_Date__c = Date.today().addDays(8),
+            Status__c = 'Approved',
+            Balance_Deducted__c = true,
+            Reason__c = 'Completed request'
+        );
+        insert approvedRequest;
+        Test.setCreatedDate(approvedRequest.Id, DateTime.now().addMinutes(1));
+
         Test.startTest();
         List<Leave_Request__c> myRequests = LeaveHomeController.getMyRequests();
         Test.stopTest();
@@ -330,6 +356,7 @@ private class LeaveHomeControllerTest {
         Assert.areEqual(secondRequest.Id, myRequests[0].Id);
         Assert.areEqual(firstRequest.Id, myRequests[1].Id);
         Assert.areEqual('Annual Leave Policy', myRequests[0].Leave_Type_Name__c);
+        Assert.areEqual(false, new Set<Id>{ myRequests[0].Id, myRequests[1].Id }.contains(approvedRequest.Id));
     }
 
     @IsTest
@@ -622,5 +649,33 @@ private class LeaveHomeControllerTest {
                 PermissionSetId = permissionSetRecord.Id
             );
         }
+    }
+
+    private static String getRelatedName(Leave_Request__c requestRecord, String lookupFieldApiName) {
+        if (requestRecord == null || String.isBlank(lookupFieldApiName)) {
+            return null;
+        }
+
+        Schema.DescribeFieldResult describeResult =
+            Leave_Request__c.SObjectType.getDescribe().fields.getMap().get(lookupFieldApiName).getDescribe();
+        String relationshipName = describeResult.getRelationshipName();
+        if (String.isBlank(relationshipName)) {
+            return null;
+        }
+
+        SObject relatedRecord = requestRecord.getSObject(relationshipName);
+        return relatedRecord == null ? null : String.valueOf(relatedRecord.get('Name'));
+    }
+
+    private static String getLeaveTypeName(Leave_Request__c requestRecord) {
+        if (requestRecord == null) {
+            return null;
+        }
+        Map<String, Object> populatedFields = requestRecord.getPopulatedFieldsAsMap();
+        if (populatedFields.containsKey('Leave_Type_Name__c')) {
+            Object directValue = populatedFields.get('Leave_Type_Name__c');
+            return directValue == null ? null : String.valueOf(directValue);
+        }
+        return getRelatedName(requestRecord, 'Leave_Type_Definition__c');
     }
 }

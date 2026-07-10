@@ -1,0 +1,78 @@
+<template>
+    <lightning-card title="Leave Calendar" icon-name="standard:dashboard">
+        <div class="dashboard slds-p-around_medium">
+            <div class="dashboard-header">
+                <div>
+                    <p class="dashboard-kicker">{scopeLabel}</p>
+                    <h2 class="dashboard-title">{titleLabel}</h2>
+                </div>
+                <div class="dashboard-actions">
+                    <lightning-button-icon
+                        icon-name="utility:chevronleft"
+                        alternative-text="Previous month"
+                        onclick={previousMonth}>
+                    </lightning-button-icon>
+                    <lightning-button-icon
+                        class="slds-m-left_x-small"
+                        icon-name="utility:chevronright"
+                        alternative-text="Next month"
+                        onclick={nextMonth}>
+                    </lightning-button-icon>
+                </div>
+            </div>
+
+            <template lwc:if={isLoading}>
+                <div class="slds-p-vertical_medium">
+                    <lightning-spinner size="small" alternative-text="Loading dashboard"></lightning-spinner>
+                </div>
+            </template>
+
+            <template lwc:if={hasError}>
+                <div class="slds-notify slds-notify_alert slds-theme_error slds-m-top_small" role="alert">
+                    <span>{error}</span>
+                </div>
+            </template>
+
+            <template lwc:if={hasCalendarCells}>
+                <div class="legend slds-m-vertical_small">
+                    <span class="legend-pill legend-approved">Approved</span>
+                    <span class="legend-pill legend-submitted">Submitted</span>
+                    <span class="legend-pill legend-manager">Pending Manager</span>
+                    <span class="legend-pill legend-hr">Pending HR</span>
+                </div>
+
+                <div class="calendar-grid calendar-weekdays">
+                    <template for:each={weekdayLabels} for:item="weekdayLabel">
+                        <div key={weekdayLabel} class="weekday-cell">{weekdayLabel}</div>
+                    </template>
+                </div>
+
+                <div class="calendar-grid calendar-body">
+                    <template for:each={calendarCells} for:item="cell">
+                        <div key={cell.key} class={cell.cellClass}>
+                            <div class="cell-header">
+                                <span class="cell-day">{cell.dayNumber}</span>
+                            </div>
+                            <div class="cell-entries">
+                                <template for:each={cell.entries} for:item="entry">
+                                    <a key={entry.requestId} href={entry.detailUrl} class={entry.entryClass}>
+                                        <template lwc:if={entry.photoUrl}>
+                                            <img class="entry-avatar" src={entry.photoUrl} alt={entry.displayName} />
+                                        </template>
+                                        <template lwc:else>
+                                            <span class="entry-avatar entry-avatar-fallback">{entry.initials}</span>
+                                        </template>
+                                        <span class="entry-name">{entry.displayName}</span>
+                                    </a>
+                                </template>
+                                <template lwc:if={cell.moreCount}>
+                                    <div class="entry-more">+{cell.moreCount} more</div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </template>
+        </div>
+    </lightning-card>
+</template>

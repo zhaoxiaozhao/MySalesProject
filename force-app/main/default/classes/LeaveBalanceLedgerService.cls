@@ -520,7 +520,9 @@ public without sharing class LeaveBalanceLedgerService {
         }
 
         List<Leave_Balance__c> balances = [
-            SELECT Id, Name, User__c, User__r.Name, Year__c, Balance_Year__c
+            SELECT Id, Name, User__c, User__r.Name, Year__c, Balance_Year__c,
+                   Annual_Leave__c, Carryover_Annual_Leave__c, Carryover_Expiry_Date__c,
+                   Sick_Leave__c, Personal_Leave__c
             FROM Leave_Balance__c
             WHERE User__c IN :userIds
             AND Year__c = :yearValue
@@ -532,7 +534,9 @@ public without sharing class LeaveBalanceLedgerService {
     public static List<BalanceSummary> getAllBalanceSummaries(Integer limitSize) {
         Integer safeLimit = limitSize == null || limitSize <= 0 ? 200 : limitSize;
         List<Leave_Balance__c> balances = [
-            SELECT Id, Name, User__c, User__r.Name, Year__c, Balance_Year__c
+            SELECT Id, Name, User__c, User__r.Name, Year__c, Balance_Year__c,
+                   Annual_Leave__c, Carryover_Annual_Leave__c, Carryover_Expiry_Date__c,
+                   Sick_Leave__c, Personal_Leave__c
             FROM Leave_Balance__c
             ORDER BY Year__c DESC, User__r.Name
             LIMIT :safeLimit
@@ -1063,10 +1067,12 @@ public without sharing class LeaveBalanceLedgerService {
             summary.userId = balanceRecord.User__c;
             summary.userName = balanceRecord.User__r == null ? null : balanceRecord.User__r.Name;
             summary.yearValue = balanceRecord.Year__c;
-            summary.annualTotalAvailable = 0;
-            summary.carryoverAnnualLeave = 0;
-            summary.sickLeave = 0;
-            summary.personalLeave = 0;
+            summary.annualTotalAvailable =
+                safeDecimal(balanceRecord.Annual_Leave__c) + safeDecimal(balanceRecord.Carryover_Annual_Leave__c);
+            summary.carryoverAnnualLeave = safeDecimal(balanceRecord.Carryover_Annual_Leave__c);
+            summary.carryoverExpiryDate = balanceRecord.Carryover_Expiry_Date__c;
+            summary.sickLeave = safeDecimal(balanceRecord.Sick_Leave__c);
+            summary.personalLeave = safeDecimal(balanceRecord.Personal_Leave__c);
 
             List<Leave_Balance_Line__c> balanceLines = linesByBalanceId.containsKey(balanceRecord.Id)
                 ? linesByBalanceId.get(balanceRecord.Id)

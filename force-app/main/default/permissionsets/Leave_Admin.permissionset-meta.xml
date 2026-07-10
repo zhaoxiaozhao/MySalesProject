@@ -420,4 +420,12 @@
         <object>Leave_Balance_Transaction__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
+    <classAccesses>
+        <apexClass>LeaveDashboardController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <tabSettings>
+        <tab>Leave_Dashboard</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
 </PermissionSet>

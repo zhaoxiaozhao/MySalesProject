@@ -12,7 +12,9 @@
     <isOmniPinnedViewEnabled>false</isOmniPinnedViewEnabled>
     <label>Leave Management</label>
     <navType>Standard</navType>
-    <tabs>standard-home</tabs>
+    <tabs>Leave_Home</tabs>
+    <tabs>Search</tabs>
+    <tabs>Leave_Dashboard</tabs>
     <tabs>Leave_Request__c</tabs>
     <tabs>Leave_Balance__c</tabs>
     <tabs>Leave_Type_Definition__c</tabs>

@@ -38,7 +38,8 @@ public with sharing class LeaveHomeController {
                 'Reason__c',
                 'Balance_Deducted__c'
             },
-            'Employee__c = ' + toSoqlLiteral(UserInfo.getUserId()),
+            'Employee__c = ' + toSoqlLiteral(UserInfo.getUserId()) +
+                ' AND Status__c IN (\'Draft\', \'Submitted\', \'Pending_Manager_Approval\', \'Pending_HR_Approval\')',
             50
         );
     }
@@ -56,6 +57,8 @@ public with sharing class LeaveHomeController {
             new List<String>{
                 'Id',
                 'Name',
+                'Leave_Type_Name__c',
+                'Leave_Type_Definition__r.Name',
                 'Start_Date__c',
                 'End_Date__c',
                 'Days__c',
@@ -353,23 +356,62 @@ public with sharing class LeaveHomeController {
         Set<String> addedFields,
         String fieldPath
     ) {
-        if (String.isBlank(fieldPath)) {
+        String normalizedFieldPath = normalizeLeaveRequestFieldPath(fieldPath);
+        if (String.isBlank(normalizedFieldPath)) {
             return;
+        }
+
+        Integer relationSeparatorIndex = normalizedFieldPath.indexOf('.');
+        String rootFieldApiName = relationSeparatorIndex > -1
+            ? relationshipTokenToLookupFieldApiName(
+                normalizedFieldPath.substring(0, relationSeparatorIndex)
+            )
+            : normalizedFieldPath;
+        if (!hasLeaveRequestField(rootFieldApiName) ||
+            nonQueryableRequestFields.contains(rootFieldApiName) ||
+            nonQueryableRequestFields.contains(normalizedFieldPath) ||
+            addedFields.contains(normalizedFieldPath)) {
+            return;
+        }
+
+        selectFields.add(normalizedFieldPath);
+        addedFields.add(normalizedFieldPath);
+    }
+
+    private static String normalizeLeaveRequestFieldPath(String fieldPath) {
+        if (String.isBlank(fieldPath)) {
+            return null;
         }
 
         Integer relationSeparatorIndex = fieldPath.indexOf('.');
-        String rootFieldApiName = relationSeparatorIndex > -1
-            ? fieldPath.substring(0, relationSeparatorIndex)
-            : fieldPath;
-        if (!hasLeaveRequestField(rootFieldApiName) ||
-            nonQueryableRequestFields.contains(rootFieldApiName) ||
-            nonQueryableRequestFields.contains(fieldPath) ||
-            addedFields.contains(fieldPath)) {
-            return;
+        if (relationSeparatorIndex < 0) {
+            return fieldPath;
         }
 
-        selectFields.add(fieldPath);
-        addedFields.add(fieldPath);
+        String relationshipToken = fieldPath.substring(0, relationSeparatorIndex);
+        String childFieldPath = fieldPath.substring(relationSeparatorIndex + 1);
+        String lookupFieldApiName = relationshipTokenToLookupFieldApiName(relationshipToken);
+        if (!hasLeaveRequestField(lookupFieldApiName)) {
+            return null;
+        }
+
+        Schema.DescribeFieldResult describeResult =
+            Leave_Request__c.SObjectType.getDescribe().fields.getMap().get(lookupFieldApiName).getDescribe();
+        String relationshipName = describeResult.getRelationshipName();
+        if (String.isBlank(relationshipName)) {
+            return null;
+        }
+        return relationshipName + '.' + childFieldPath;
+    }
+
+    private static String relationshipTokenToLookupFieldApiName(String relationshipToken) {
+        if (String.isBlank(relationshipToken)) {
+            return null;
+        }
+        if (relationshipToken.endsWith('__r')) {
+            return relationshipToken.substring(0, relationshipToken.length() - 3) + '__c';
+        }
+        return relationshipToken;
     }
 
     private static Boolean hasLeaveRequestField(String fieldApiName) {
